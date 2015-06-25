@@ -30,4 +30,3 @@ CreateSolution("luaerror")
 			"shared.cpp",
 			"shared.hpp"
 		})
-		IncludeSourceSDK()
