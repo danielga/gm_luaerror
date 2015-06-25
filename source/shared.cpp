@@ -2,7 +2,6 @@
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoLuaReference.h>
-#include <interfaces.hpp>
 #include <lua.hpp>
 #include <cstdint>
 #include <string>
@@ -310,12 +309,14 @@ LUA_FUNCTION_STATIC( ResetAdvancedLuaErrorReporter )
 
 LUA_FUNCTION_STATIC( DetourLuaGameCallback )
 {
+	(void)state;
 	callback.Detour( );
 	return 0;
 }
 
 LUA_FUNCTION_STATIC( ResetLuaGameCallback )
 {
+	(void)state;
 	callback.Reset( );
 	return 0;
 }
