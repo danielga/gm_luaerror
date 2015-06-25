@@ -12,7 +12,7 @@ end
 include(gmcommon)
 
 CreateSolution("luaerror")
-	CreateProject(SERVERSIDE, true)
+	CreateProject(SERVERSIDE, SOURCES_MANUAL)
 		AddFiles({
 			"main.cpp",
 			"server.cpp",
@@ -24,7 +24,7 @@ CreateSolution("luaerror")
 		IncludeScanning()
 		IncludeDetouring()
 
-	CreateProject(CLIENTSIDE, true)
+	CreateProject(CLIENTSIDE, SOURCES_MANUAL)
 		AddFiles({
 			"main.cpp",
 			"shared.cpp",
