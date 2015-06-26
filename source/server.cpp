@@ -32,7 +32,7 @@ static const size_t HandleClientLuaError_symlen = o;
 
 #endif
 
-static std::string main_binary = SourceSDK::GetBinaryFileName( "server", false, true, "garrysmod/bin/" );
+static std::string main_binary = helpers::GetBinaryFileName( "server", false, true, "garrysmod/bin/" );
 static SourceSDK::FactoryLoader engine_loader( "engine", false );
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
