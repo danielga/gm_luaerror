@@ -79,34 +79,35 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 		HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
 }
 
-LUA_FUNCTION_STATIC( DetourHandleClientLuaError )
+LUA_FUNCTION_STATIC( EnableClientDetour )
 {
-	bool errored = false;
-	try
-	{
-		HandleClientLuaError_detour = std::make_unique< MologieDetours::Detour<HandleClientLuaError_t> >(
-			HandleClientLuaError, HandleClientLuaError_d
-		);
-	}
-	catch( const std::exception &e )
-	{
-		errored = true;
-		LUA->PushString( e.what( ) );
-	}
+	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
 
-	if( errored )
+	bool enable = LUA->GetBool( 1 );
+	if( enable && !HandleClientLuaError_detour )
 	{
+		bool errored = false;
+		try
+		{
+			HandleClientLuaError_detour = std::make_unique< MologieDetours::Detour<HandleClientLuaError_t> >(
+				HandleClientLuaError, HandleClientLuaError_d
+			);
+		}
+		catch( const std::exception &e )
+		{
+			errored = true;
+			LUA->PushNil( );
+			LUA->PushString( e.what( ) );
+		}
+
+		if( errored )
+			return 2;
+	}
+	else if( !enable && HandleClientLuaError_detour )
 		HandleClientLuaError_detour.reset( );
-		LUA->ThrowError( LUA->GetString( -1 ) );
-	}
 
-	return 0;
-}
-
-LUA_FUNCTION_STATIC( ResetHandleClientLuaError )
-{
-	HandleClientLuaError_detour.reset( );
-	return 0;
+	LUA->PushBool( true );
+	return 1;
 }
 
 void Initialize( lua_State *state )
@@ -131,16 +132,14 @@ void Initialize( lua_State *state )
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
-	LUA->PushCFunction( DetourHandleClientLuaError );
-	LUA->SetField( -2, "DetourHandleClientLuaError" );
-
-	LUA->PushCFunction( ResetHandleClientLuaError );
-	LUA->SetField( -2, "ResetHandleClientLuaError" );
+	LUA->PushCFunction( EnableClientDetour );
+	LUA->SetField( -2, "EnableClientDetour" );
 }
 
 void Deinitialize( lua_State *state )
 {
-	HandleClientLuaError_detour.reset( );
+	if( HandleClientLuaError_detour )
+		HandleClientLuaError_detour.reset( );
 }
 
 }

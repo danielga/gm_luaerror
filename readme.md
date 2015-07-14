@@ -6,6 +6,15 @@ A module for Garry's Mod that adds hooks for obtaining errors that happen on the
 Info
 -------
 
+	luaerror.Version -- holds the luaerror module version in a string form
+	luaerror.VersionNum -- holds the luaerror module version in a numeric form, LuaJIT style
+
+	luaerror.EnableRuntimeDetour(boolean) -- enable/disable Lua runtime errors
+	luaerror.EnableCompiletimeDetour(boolean) -- enable/disable Lua compiletime errors
+
+	luaerror.EnableClientDetour(boolean) -- enable/disable Lua errors from clients (serverside only)
+	-- returns nil followed by an error string in case of failure to detour
+
 Mac was not tested at all (sorry but I'm poor).
 
 If stuff starts erroring or fails to work, be sure to check the correct line endings (\n and such) are present in the files for each OS.

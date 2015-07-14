@@ -289,36 +289,43 @@ private:
 
 static CLuaGameCallback callback;
 
-LUA_FUNCTION_STATIC( DetourAdvancedLuaErrorReporter )
+inline void DetourRuntime( lua_State *state, bool enable )
 {
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
-	LUA->PushNumber( 1 );
-	LUA->PushCFunction( AdvancedLuaErrorReporter );
-	LUA->SetTable( -3 );
-	return 0;
+	if( enable )
+	{
+		LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
+		LUA->PushNumber( 1 );
+		LUA->PushCFunction( AdvancedLuaErrorReporter );
+		LUA->SetTable( -3 );
+	}
+	else
+	{
+		LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
+		LUA->PushNumber( 1 );
+		reporter_ref.Push( );
+		LUA->SetTable( -3 );
+	}
 }
 
-LUA_FUNCTION_STATIC( ResetAdvancedLuaErrorReporter )
+LUA_FUNCTION_STATIC( EnableRuntimeDetour )
 {
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
-	LUA->PushNumber( 1 );
-	reporter_ref.Push( );
-	LUA->SetTable( -3 );
-	return 0;
+	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
+	DetourRuntime( state, LUA->GetBool( 1 ) );
+	LUA->PushBool( true );
+	return 1;
 }
 
-LUA_FUNCTION_STATIC( DetourLuaGameCallback )
+LUA_FUNCTION_STATIC( EnableCompiletimeDetour )
 {
-	(void)state;
-	callback.Detour( );
-	return 0;
-}
+	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
 
-LUA_FUNCTION_STATIC( ResetLuaGameCallback )
-{
-	(void)state;
-	callback.Reset( );
-	return 0;
+	if( LUA->GetBool( 1 ) )
+		callback.Detour( );
+	else
+		callback.Reset( );
+
+	LUA->PushBool( true );
+	return 1;
 }
 
 void Initialize( lua_State *state )
@@ -336,22 +343,17 @@ void Initialize( lua_State *state )
 
 	LUA->Pop( 1 );
 
-	LUA->PushCFunction( DetourAdvancedLuaErrorReporter );
-	LUA->SetField( -2, "DetourAdvancedLuaErrorReporter" );
+	LUA->PushCFunction( EnableRuntimeDetour );
+	LUA->SetField( -2, "EnableRuntimeDetour" );
 
-	LUA->PushCFunction( ResetAdvancedLuaErrorReporter );
-	LUA->SetField( -2, "ResetAdvancedLuaErrorReporter" );
-
-	LUA->PushCFunction( DetourLuaGameCallback );
-	LUA->SetField( -2, "DetourLuaGameCallback" );
-
-	LUA->PushCFunction( ResetLuaGameCallback );
-	LUA->SetField( -2, "ResetLuaGameCallback" );
+	LUA->PushCFunction( EnableCompiletimeDetour );
+	LUA->SetField( -2, "EnableCompiletimeDetour" );
 }
 
 void Deinitialize( lua_State *state )
 {
-	ResetAdvancedLuaErrorReporter( state );
+	DetourRuntime( state, false );
+	callback.Reset( );
 	reporter_ref.Free( );
 }
 
