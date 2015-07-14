@@ -1,8 +1,8 @@
+#include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoLuaReference.h>
-#include <lua.hpp>
 #include <cstdint>
 #include <string>
 #include <sstream>
@@ -11,58 +11,6 @@
 
 namespace shared
 {
-
-struct LuaDebug
-{
-	LuaDebug( const lua_Debug &debug ) :
-		event( debug.event ),
-		name( debug.name != nullptr ? debug.name : "" ),
-		namewhat( debug.namewhat != nullptr ? debug.namewhat : "" ),
-		what( debug.what != nullptr ? debug.what : "" ),
-		source( debug.source != nullptr ? debug.source : "" ),
-		currentline( debug.currentline ),
-		nups( debug.nups ),
-		linedefined( debug.linedefined ),
-		lastlinedefined( debug.lastlinedefined ),
-		short_src( debug.short_src ),
-		i_ci( debug.i_ci )
-	{ }
-
-	int32_t event;
-	std::string name;
-	std::string namewhat;
-	std::string what;
-	std::string source;
-	int32_t currentline;
-	int32_t nups;
-	int32_t linedefined;
-	int32_t lastlinedefined;
-	std::string short_src;
-	int32_t i_ci;
-};
-
-struct LuaErrorChain
-{
-	LuaErrorChain( ) :
-		runtime( false ),
-		source_line( -1 )
-	{ }
-
-	void Clear( )
-	{
-		runtime = false;
-		source_file.clear( );
-		source_line = -1;
-		error_string.clear( );
-		stack_data.clear( );
-	}
-
-	bool runtime;
-	std::string source_file;
-	int32_t source_line;
-	std::string error_string;
-	std::vector<LuaDebug> stack_data;
-};
 
 static GarrysMod::Lua::AutoLuaReference reporter_ref;
 static LuaErrorChain lua_error_chain;
