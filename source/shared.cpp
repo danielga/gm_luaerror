@@ -123,58 +123,51 @@ LUA_FUNCTION_STATIC( LuaErrorHookCall )
 	LUA->PushNumber( lua_error_chain.source_line );
 	LUA->PushString( lua_error_chain.error_string.c_str( ) );
 
-	int32_t args = 5;
-	size_t stacksize = lua_error_chain.stack_data.size( );
-	if( stacksize > 0 )
+	LUA->CreateTable( );
+	for( size_t i = 0; i < lua_error_chain.stack_data.size( ); ++i )
 	{
-		args = 6;
-
+		LUA->PushNumber( i + 1 );
 		LUA->CreateTable( );
-		for( size_t i = 0; i < stacksize; ++i )
-		{
-			LUA->PushNumber( i + 1 );
-			LUA->CreateTable( );
 
-			LuaDebug &stacklevel = lua_error_chain.stack_data[i];
+		LuaDebug &stacklevel = lua_error_chain.stack_data[i];
 
-			LUA->PushNumber( stacklevel.event );
-			LUA->SetField( -2, "event" );
+		LUA->PushNumber( stacklevel.event );
+		LUA->SetField( -2, "event" );
 
-			LUA->PushString( stacklevel.name.c_str( ) );
-			LUA->SetField( -2, "name" );
+		LUA->PushString( stacklevel.name.c_str( ) );
+		LUA->SetField( -2, "name" );
 
-			LUA->PushString( stacklevel.namewhat.c_str( ) );
-			LUA->SetField( -2, "namewhat" );
+		LUA->PushString( stacklevel.namewhat.c_str( ) );
+		LUA->SetField( -2, "namewhat" );
 
-			LUA->PushString( stacklevel.what.c_str( ) );
-			LUA->SetField( -2, "what" );
+		LUA->PushString( stacklevel.what.c_str( ) );
+		LUA->SetField( -2, "what" );
 
-			LUA->PushString( stacklevel.source.c_str( ) );
-			LUA->SetField( -2, "source" );
+		LUA->PushString( stacklevel.source.c_str( ) );
+		LUA->SetField( -2, "source" );
 
-			LUA->PushNumber( stacklevel.currentline );
-			LUA->SetField( -2, "currentline" );
+		LUA->PushNumber( stacklevel.currentline );
+		LUA->SetField( -2, "currentline" );
 
-			LUA->PushNumber( stacklevel.nups );
-			LUA->SetField( -2, "nups" );
+		LUA->PushNumber( stacklevel.nups );
+		LUA->SetField( -2, "nups" );
 
-			LUA->PushNumber( stacklevel.linedefined );
-			LUA->SetField( -2, "linedefined" );
+		LUA->PushNumber( stacklevel.linedefined );
+		LUA->SetField( -2, "linedefined" );
 
-			LUA->PushNumber( stacklevel.lastlinedefined );
-			LUA->SetField( -2, "lastlinedefined" );
+		LUA->PushNumber( stacklevel.lastlinedefined );
+		LUA->SetField( -2, "lastlinedefined" );
 
-			LUA->PushString( stacklevel.short_src.c_str( ) );
-			LUA->SetField( -2, "short_src" );
+		LUA->PushString( stacklevel.short_src.c_str( ) );
+		LUA->SetField( -2, "short_src" );
 
-			LUA->PushNumber( stacklevel.i_ci );
-			LUA->SetField( -2, "i_ci" );
+		LUA->PushNumber( stacklevel.i_ci );
+		LUA->SetField( -2, "i_ci" );
 
-			LUA->SetTable( -3 );
-		}
+		LUA->SetTable( -3 );
 	}
 
-	LUA->Call( args, 1 );
+	LUA->Call( 6, 1 );
 	return 1;
 }
 

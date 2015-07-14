@@ -15,6 +15,18 @@ Info
 	luaerror.EnableClientDetour(boolean) -- enable/disable Lua errors from clients (serverside only)
 	-- returns nil followed by an error string in case of failure to detour
 
+	Hooks:
+	LuaError(isruntime, sourcefile, sourceline, errorstr, stack)
+	-- isruntime is a boolean saying whether this is a runtime error or not
+	-- sourcefile is a string which is the source file of the error
+	-- sourceline is a number which is the source line of the error
+	-- errorstr is a string which is the error itself
+	-- stack is a table containing the Lua stack at the time of the error
+
+	ClientLuaError(player, errorstr)
+	-- player is a Player object which indicates who errored
+	-- errorstr is a string which is the error itself
+
 Mac was not tested at all (sorry but I'm poor).
 
 If stuff starts erroring or fails to work, be sure to check the correct line endings (\n and such) are present in the files for each OS.
