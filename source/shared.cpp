@@ -77,7 +77,7 @@ LUA_FUNCTION_STATIC( LuaErrorHookCall )
 		LUA->PushNumber( i + 1 );
 		LUA->CreateTable( );
 
-		LuaDebug &stacklevel = lua_error_chain.stack_data[i];
+		const LuaDebug &stacklevel = lua_error_chain.stack_data[i];
 
 		LUA->PushNumber( stacklevel.event );
 		LUA->SetField( -2, "event" );
