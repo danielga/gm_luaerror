@@ -25,7 +25,7 @@ LUA_FUNCTION_STATIC( ErrorTraceback )
 
 	lua_Debug dbg = { 0 };
 	GarrysMod::Lua::ILuaInterface *lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
-	for( int32_t lvl = 1; lua->GetStack( lvl, &dbg ) == 1; ++lvl, memset( &dbg, 0, sizeof( dbg ) ) )
+	for( int32_t lvl = 1; lua->GetStack( lvl, &dbg ) == 1; ++lvl )
 	{
 		if( lua->GetInfo( "Sln", &dbg ) == 0 )
 			break;
