@@ -13,6 +13,7 @@ include(gmcommon)
 
 CreateSolution("luaerror")
 	CreateProject(SERVERSIDE, SOURCES_MANUAL)
+		warnings("Default")
 		AddFiles({
 			"main.cpp",
 			"server.cpp",
