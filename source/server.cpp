@@ -2,6 +2,9 @@
 
 #undef INVALID_HANDLE_VALUE
 
+#undef min
+#undef max
+
 #include <server.hpp>
 #include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
