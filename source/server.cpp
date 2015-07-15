@@ -159,9 +159,9 @@ LUA_FUNCTION_STATIC( EnableClientDetour )
 		bool errored = false;
 		try
 		{
-			HandleClientLuaError_detour = std::make_unique< MologieDetours::Detour<HandleClientLuaError_t> >(
+			HandleClientLuaError_detour.reset( new MologieDetours::Detour<HandleClientLuaError_t>(
 				HandleClientLuaError, HandleClientLuaError_d
-			);
+			) );
 		}
 		catch( const std::exception &e )
 		{
