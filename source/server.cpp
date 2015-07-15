@@ -6,11 +6,16 @@
 #include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
+#include <lua.hpp>
+#include <cstdint>
 #include <interfaces.hpp>
 #include <symbolfinder.hpp>
 #include <detours.h>
 #include <memory>
 #include <sstream>
+#include <algorithm>
+#include <functional>
+#include <cctype>
 
 IVEngineServer *engine = nullptr;
 
@@ -48,105 +53,97 @@ typedef void( *HandleClientLuaError_t )( CBasePlayer *player, const char *error 
 static std::unique_ptr< MologieDetours::Detour<HandleClientLuaError_t> > HandleClientLuaError_detour;
 static HandleClientLuaError_t HandleClientLuaError = nullptr;
 
-static shared::LuaErrorChain lua_error_chain;
-
-LUA_FUNCTION_STATIC( ClientLuaErrorHookCall )
+static inline std::string Trim( const std::string &s )
 {
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-
-	LUA->GetField( -1, "hook" );
-	LUA->GetField( -1, "Run" );
-
-	LUA->PushString( "ClientLuaError" );
-
-	LUA->GetField( -4, "Entity" );
-	LUA->PushNumber( lua_error_chain.player );
-	LUA->Call( 1, 1 );
-
-	LUA->PushString( lua_error_chain.source_file.c_str( ) );
-	LUA->PushNumber( lua_error_chain.source_line );
-	LUA->PushString( lua_error_chain.error_string.c_str( ) );
-
-	LUA->CreateTable( );
-
-	for( size_t i = 0; i < lua_error_chain.stack_data.size( ); ++i )
-	{
-		LUA->PushNumber( i + 1 );
-		LUA->CreateTable( );
-
-		const shared::LuaDebug &stacklevel = lua_error_chain.stack_data[i];
-
-		LUA->PushString( stacklevel.name.c_str( ) );
-		LUA->SetField( -2, "name" );
-
-		LUA->PushNumber( stacklevel.currentline );
-		LUA->SetField( -2, "currentline" );
-
-		LUA->PushString( stacklevel.short_src.c_str( ) );
-		LUA->SetField( -2, "short_src" );
-
-		LUA->PushString( stacklevel.short_src.c_str( ) );
-		LUA->SetField( -2, "source" );
-
-		LUA->SetTable( -3 );
-	}
-
-	LUA->Call( 6, 1 );
-	return 1;
+	std::string c = s;
+	c.erase(
+		std::find_if(
+			c.rbegin( ),
+			c.rend( ),
+			std::not1( std::ptr_fun<int, int>( std::isspace ) )
+		).base( ),
+		c.end( )
+	); // remote trailing "spaces"
+	c.erase(
+		c.begin( ),
+		std::find_if(
+			c.begin( ),
+			c.end( ),
+			std::not1( std::ptr_fun<int, int>( std::isspace ) )
+		)
+	); // remote initial "spaces"
+	return c;
 }
 
 static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 {
-	lua->PushCFunction( ClientLuaErrorHookCall );
+	int32_t funcs = shared::PushHookRun( lua, "ClientLuaError", false );
+	if( funcs == 0 )
+		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
 
-	std::istringstream strstream( error );
+	int32_t args = 2;
+	lua->PushString( "ClientLuaError" );
 
-	strstream.ignore( 8 ); // ignore [ERROR] and <space>
-
-	std::getline( strstream, lua_error_chain.source_file, ':' );
-
-	strstream >> lua_error_chain.source_line;
-
-	strstream.ignore( 2 ); // remove : and <space>
-
-	std::getline( strstream, lua_error_chain.error_string );
-
-	std::string waste;
-	while( strstream.good( ) )
+	lua->GetField( -funcs - args, "Entity" ); // get Entity function from global table
+	lua->Remove( -funcs - args - 1 ); // remove global table
+	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 	{
-		shared::LuaDebug dbg;
+		lua->Pop( funcs + args );
+		lua->ErrorNoHalt( "[ClientLuaError] Global Entity is not a function!\n" );
+		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
+	}
+	lua->PushNumber( player->entindex( ) );
+	lua->Call( 1, 1 );
 
+	std::string cleanerror = Trim( error );
+	if( cleanerror.compare( 0, 8, "[ERROR] " ) == 0 )
+		cleanerror = cleanerror.erase( 0, 8 );
+
+	args += 2;
+	lua->PushString( cleanerror.c_str( ) );
+
+	std::istringstream errstream( cleanerror );
+	args += shared::PushErrorProperties( lua, errstream );
+
+	lua->CreateTable( );
+	while( errstream )
+	{
 		int32_t level = 0;
-		strstream >> level;
+		errstream >> level;
 
-		strstream.ignore( 2 ); // ignore . and <space>
+		errstream.ignore( 2 ); // ignore ". "
 
-		strstream >> dbg.name;
+		std::string name;
+		errstream >> name;
 
-		strstream.ignore( 3 ); // ignore <space>, - and <space>
+		errstream.ignore( 3 ); // ignore " - "
 
-		std::getline( strstream, dbg.short_src, ':' );
+		std::string source;
+		std::getline( errstream, source, ':' );
 
-		strstream >> dbg.currentline;
+		int32_t currentline = -1;
+		errstream >> currentline;
 
-		if( strstream.good( ) ) // it shouldn't have reached eof by now
-			lua_error_chain.stack_data.push_back( dbg );
+		if( !errstream ) // it shouldn't have reached eof by now
+			break;
+
+		lua->PushNumber( level );
+		lua->CreateTable( );
+
+		lua->PushString( name.c_str( ) );
+		lua->SetField( -2, "name" );
+
+		lua->PushNumber( currentline );
+		lua->SetField( -2, "currentline" );
+
+		lua->PushString( source.c_str( ) );
+		lua->SetField( -2, "source" );
+
+		lua->SetTable( -3 );
 	}
 
-	lua_error_chain.player = player->entindex( );
-
-	bool call_original = true;
-	if( lua->PCall( 0, 1, 0 ) != 0 )
-		lua->ErrorNoHalt( "[ClientLuaError hook error] %s\n", lua->GetString( -1 ) );
-	else if( lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) )
-		call_original = !lua->GetBool( -1 );
-
-	lua->Pop( 1 );
-
-	lua_error_chain.Clear( );
-
-	if( call_original )
-		HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
+	if( shared::RunHook( lua, "ClientLuaError", args, funcs ) )
+		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
 }
 
 LUA_FUNCTION_STATIC( EnableClientDetour )

@@ -3,119 +3,180 @@
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoLuaReference.h>
+#include <lua.hpp>
 #include <cstdint>
 #include <string>
 #include <sstream>
-#include <vector>
-#include <memory>
 
 namespace shared
 {
 
 static GarrysMod::Lua::AutoLuaReference reporter_ref;
-static LuaErrorChain lua_error_chain;
 
-static void ParseErrorString( const std::string &error )
+static bool runtime = false;
+static std::string runtime_error;
+static GarrysMod::Lua::AutoLuaReference runtime_stack;
+
+LUA_FUNCTION_STATIC( ErrorTraceback )
 {
-	if( error.empty( ) )
-		return;
+	std::string spaces( "\n  " );
+	std::ostringstream stream;
+	stream << LUA->GetString( 1 );
 
-	std::istringstream strstream( error );
+	lua_Debug dbg = { 0 };
+	GarrysMod::Lua::ILuaInterface *lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
+	for( int32_t lvl = 1; lua->GetStack( lvl, &dbg ) == 1; ++lvl, memset( &dbg, 0, sizeof( dbg ) ) )
+	{
+		if( lua->GetInfo( "Sln", &dbg ) == 0 )
+			break;
 
-	std::getline( strstream, lua_error_chain.source_file, ':' );
+		stream
+			<< spaces
+			<< lvl
+			<< ". "
+			<< ( dbg.name == nullptr ? "unknown" : dbg.name )
+			<< " - "
+			<< dbg.short_src
+			<< ':'
+			<< dbg.currentline;
+		spaces += ' ';
+	}
 
-	strstream >> lua_error_chain.source_line;
-
-	strstream.ignore( 2 ); // remove : and <space>
-
-	std::getline( strstream, lua_error_chain.error_string );
+	LUA->PushString( stream.str( ).c_str( ) );
+	return 1;
 }
 
-static void BuildErrorStack( GarrysMod::Lua::ILuaInterface *lua )
+int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook, bool cleanup )
 {
-	lua_Debug dbg = { 0 };
-	for( int32_t lvl = 0; lua->GetStack( lvl, &dbg ) != 0; ++lvl, memset( &dbg, 0, sizeof( dbg ) ) )
-	{
-		if( lua->GetInfo( "Slnu", &dbg ) == 0 )
-			return;
+	lua->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
 
-		lua_error_chain.stack_data.push_back( dbg );
+	lua->GetField( -1, "hook" );
+
+	if( cleanup )
+		lua->Remove( -2 );
+
+	if( !lua->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
+	{
+		lua->ErrorNoHalt( "[%s] Global hook is not a table!\n", hook );
+		lua->Pop( 1 );
+		return 0;
 	}
+
+	lua->PushCFunction( ErrorTraceback );
+
+	lua->GetField( -2, "Run" );
+	lua->Remove( -3 );
+	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
+	{
+		lua->ErrorNoHalt( "[%s] Global hook.Run is not a function!\n", hook );
+		lua->Pop( 2 );
+		return 0;
+	}
+
+	return 2;
+}
+
+int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error )
+{
+	std::string source_file;
+	std::getline( error, source_file, ':' );
+
+	int32_t source_line = -1;
+	error >> source_line;
+
+	error.ignore( 2 ); // ignore ": "
+
+	std::string error_string;
+	std::getline( error, error_string );
+
+	if( error ) // our stream is still valid
+	{
+		lua->PushString( source_file.c_str( ) );
+		lua->PushNumber( source_line );
+		lua->PushString( error_string.c_str( ) );
+	}
+	else // it shouldn't have reached eof by now
+	{
+		lua->PushNil( );
+		lua->PushNil( );
+		lua->PushNil( );
+	}
+
+	return 3;
+}
+
+static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
+{
+	lua->CreateTable( );
+
+	int32_t lvl = 0;
+	lua_Debug dbg = { 0 };
+	while( lua->GetStack( lvl, &dbg ) == 1 && lua->GetInfo( "Slnu", &dbg ) == 1 )
+	{
+		lua->PushNumber( ++lvl );
+		lua->CreateTable( );
+
+		lua->PushNumber( dbg.event );
+		lua->SetField( -2, "event" );
+
+		lua->PushString( dbg.name != nullptr ? dbg.name : "" );
+		lua->SetField( -2, "name" );
+
+		lua->PushString( dbg.namewhat != nullptr ? dbg.namewhat : "" );
+		lua->SetField( -2, "namewhat" );
+
+		lua->PushString( dbg.what != nullptr ? dbg.what : "" );
+		lua->SetField( -2, "what" );
+
+		lua->PushString( dbg.source != nullptr ? dbg.source : "" );
+		lua->SetField( -2, "source" );
+
+		lua->PushNumber( dbg.currentline );
+		lua->SetField( -2, "currentline" );
+
+		lua->PushNumber( dbg.nups );
+		lua->SetField( -2, "nups" );
+
+		lua->PushNumber( dbg.linedefined );
+		lua->SetField( -2, "linedefined" );
+
+		lua->PushNumber( dbg.lastlinedefined );
+		lua->SetField( -2, "lastlinedefined" );
+
+		lua->PushString( dbg.short_src );
+		lua->SetField( -2, "short_src" );
+
+		lua->PushNumber( dbg.i_ci );
+		lua->SetField( -2, "i_ci" );
+
+		lua->SetTable( -3 );
+	}
+
+	return 1;
+}
+
+bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args, int32_t funcs )
+{
+	bool call_original = true;
+	if( lua->PCall( args, 1, -funcs - args ) != 0 )
+		lua->ErrorNoHalt( "\n[%s] %s\n\n", hook, lua->GetString( -1 ) );
+	else if( lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) )
+		call_original = !lua->GetBool( -1 );
+
+	lua->Pop( funcs ); // hook.Run is popped and its result pushed
+	return call_original;
 }
 
 LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
 {
-	lua_error_chain.runtime = true;
-
-	ParseErrorString( LUA->GetString( 1 ) );
-	BuildErrorStack( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
+	runtime = true;
+	runtime_error = LUA->GetString( 1 );
+	PushStackTable( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
+	runtime_stack.Create( LUA );
 
 	reporter_ref.Push( );
 	LUA->Push( 1 );
 	LUA->Call( 1, 1 );
-	return 1;
-}
-
-LUA_FUNCTION_STATIC( LuaErrorHookCall )
-{
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-
-	LUA->GetField( -1, "hook" );
-
-	LUA->GetField( -1, "Run" );
-
-	LUA->PushString( "LuaError" );
-
-	LUA->PushBool( lua_error_chain.runtime );
-	LUA->PushString( lua_error_chain.source_file.c_str( ) );
-	LUA->PushNumber( lua_error_chain.source_line );
-	LUA->PushString( lua_error_chain.error_string.c_str( ) );
-
-	LUA->CreateTable( );
-	for( size_t i = 0; i < lua_error_chain.stack_data.size( ); ++i )
-	{
-		LUA->PushNumber( i + 1 );
-		LUA->CreateTable( );
-
-		const LuaDebug &stacklevel = lua_error_chain.stack_data[i];
-
-		LUA->PushNumber( stacklevel.event );
-		LUA->SetField( -2, "event" );
-
-		LUA->PushString( stacklevel.name.c_str( ) );
-		LUA->SetField( -2, "name" );
-
-		LUA->PushString( stacklevel.namewhat.c_str( ) );
-		LUA->SetField( -2, "namewhat" );
-
-		LUA->PushString( stacklevel.what.c_str( ) );
-		LUA->SetField( -2, "what" );
-
-		LUA->PushString( stacklevel.source.c_str( ) );
-		LUA->SetField( -2, "source" );
-
-		LUA->PushNumber( stacklevel.currentline );
-		LUA->SetField( -2, "currentline" );
-
-		LUA->PushNumber( stacklevel.nups );
-		LUA->SetField( -2, "nups" );
-
-		LUA->PushNumber( stacklevel.linedefined );
-		LUA->SetField( -2, "linedefined" );
-
-		LUA->PushNumber( stacklevel.lastlinedefined );
-		LUA->SetField( -2, "lastlinedefined" );
-
-		LUA->PushString( stacklevel.short_src.c_str( ) );
-		LUA->SetField( -2, "short_src" );
-
-		LUA->PushNumber( stacklevel.i_ci );
-		LUA->SetField( -2, "i_ci" );
-
-		LUA->SetTable( -3 );
-	}
-
-	LUA->Call( 6, 1 );
 	return 1;
 }
 
@@ -159,26 +220,31 @@ public:
 
 	void LuaError( GarrysMod::Lua::CLuaError *error )
 	{
-		if( !lua_error_chain.runtime )
+		int32_t funcs = PushHookRun( lua, "LuaError" );
+		if( funcs == 0 )
+			return callback->LuaError( error );
+
+		int32_t args = 3;
+		lua->PushString( "LuaError" );
+		lua->PushBool( runtime );
+		lua->PushString( runtime ? runtime_error.c_str( ) : error->text );
+
+		std::istringstream errstream( runtime ? runtime_error : error->text );
+		args += PushErrorProperties( lua, errstream );
+
+		if( runtime )
 		{
-			ParseErrorString( error->text );
-			BuildErrorStack( lua );
+			runtime_stack.Push( );
+			runtime_stack.Free( );
+			args += 1;
 		}
+		else
+			args += PushStackTable( lua );
 
-		lua->PushCFunction( LuaErrorHookCall );
+		runtime = false;
 
-		bool call_original = true;
-		if( lua->PCall( 0, 1, 0 ) != 0 )
-			lua->ErrorNoHalt( "[LuaError hook error] %s\n", lua->GetString( -1 ) );
-		else if( lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) )
-			call_original = !lua->GetBool( -1 );
-
-		lua->Pop( 1 );
-
-		lua_error_chain.Clear( );
-
-		if( call_original )
-			callback->LuaError( error );
+		if( RunHook( lua, "LuaError", args, funcs ) )
+			return callback->LuaError( error );
 	}
 
 	void InterfaceCreated( GarrysMod::Lua::ILuaInterface *iface )
@@ -230,28 +296,33 @@ private:
 
 static CLuaGameCallback callback;
 
-inline void DetourRuntime( lua_State *state, bool enable )
+inline void DetourRuntime( lua_State *state )
 {
-	if( enable )
-	{
-		LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
-		LUA->PushNumber( 1 );
-		LUA->PushCFunction( AdvancedLuaErrorReporter );
-		LUA->SetTable( -3 );
-	}
-	else
-	{
-		LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
-		LUA->PushNumber( 1 );
-		reporter_ref.Push( );
-		LUA->SetTable( -3 );
-	}
+	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
+	LUA->PushNumber( 1 );
+	LUA->PushCFunction( AdvancedLuaErrorReporter );
+	LUA->SetTable( -3 );
+	LUA->Pop( 1 );
+}
+
+inline void ResetRuntime( lua_State *state )
+{
+	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
+	LUA->PushNumber( 1 );
+	reporter_ref.Push( );
+	LUA->SetTable( -3 );
+	LUA->Pop( 1 );
 }
 
 LUA_FUNCTION_STATIC( EnableRuntimeDetour )
 {
 	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
-	DetourRuntime( state, LUA->GetBool( 1 ) );
+
+	if( LUA->GetBool( 1 ) )
+		DetourRuntime( state );
+	else
+		ResetRuntime( state );
+
 	LUA->PushBool( true );
 	return 1;
 }
@@ -293,8 +364,7 @@ void Initialize( lua_State *state )
 
 void Deinitialize( lua_State *state )
 {
-	DetourRuntime( state, false );
-	callback.Reset( );
+	ResetRuntime( state );
 	reporter_ref.Free( );
 }
 
