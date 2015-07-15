@@ -16,16 +16,22 @@ Info
 	-- returns nil followed by an error string in case of failure to detour
 
 	Hooks:
-	LuaError(isruntime, sourcefile, sourceline, errorstr, stack)
+	LuaError(isruntime, fullerror, sourcefile, sourceline, errorstr, stack)
 	-- isruntime is a boolean saying whether this is a runtime error or not
+	-- fullerror is a string which is the full error
 	-- sourcefile is a string which is the source file of the error
 	-- sourceline is a number which is the source line of the error
 	-- errorstr is a string which is the error itself
 	-- stack is a table containing the Lua stack at the time of the error
 
-	ClientLuaError(player, errorstr)
+	ClientLuaError(player, fullerror, sourcefile, sourceline, errorstr, stack)
 	-- player is a Player object which indicates who errored
-	-- errorstr is a string which is the error itself
+	-- fullerror is a string which is the full error (trimmed and cleaned up)
+	-- sourcefile is a string which is the source file of the error (may be nil)
+	-- sourceline is a number which is the source line of the error (may be nil)
+	-- errorstr is a string which is the error itself (may be nil)
+	-- stack is a table containing the Lua stack at the time of the error
+	-- sourcefile, sourceline and errorstr may be nil because of ErrorNoHalt and friends
 
 Mac was not tested at all (sorry but I'm poor).
 
