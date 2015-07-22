@@ -13,10 +13,10 @@ GMOD_MODULE_OPEN( )
 
 	LUA->CreateTable( );
 
-	LUA->PushString( "1.2.0" );
+	LUA->PushString( "luaerror 1.2.0" );
 	LUA->SetField( -2, "Version" );
 
-	// version num follows LuaJIT style, xx.yy.zz
+	// version num follows LuaJIT style, xxyyzz
 	LUA->PushNumber( 10200 );
 	LUA->SetField( -2, "VersionNum" );
 
