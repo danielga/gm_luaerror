@@ -2,7 +2,7 @@
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
-#include <GarrysMod/Lua/AutoLuaReference.h>
+#include <GarrysMod/Lua/AutoReference.h>
 #include <lua.hpp>
 #include <cstdint>
 #include <string>
@@ -11,11 +11,11 @@
 namespace shared
 {
 
-static GarrysMod::Lua::AutoLuaReference reporter_ref;
+static GarrysMod::Lua::AutoReference reporter_ref;
 
 static bool runtime = false;
 static std::string runtime_error;
-static GarrysMod::Lua::AutoLuaReference runtime_stack;
+static GarrysMod::Lua::AutoReference runtime_stack;
 
 LUA_FUNCTION_STATIC( ErrorTraceback )
 {
@@ -172,7 +172,7 @@ LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
 	runtime = true;
 	runtime_error = LUA->GetString( 1 );
 	PushStackTable( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
-	runtime_stack.Create( LUA );
+	runtime_stack.Create( );
 
 	reporter_ref.Push( );
 	LUA->Push( 1 );
@@ -342,6 +342,9 @@ LUA_FUNCTION_STATIC( EnableCompiletimeDetour )
 
 void Initialize( lua_State *state )
 {
+	reporter_ref.Setup( LUA );
+	runtime_stack.Setup( LUA );
+
 	callback.SetLua( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
 
 	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
@@ -349,7 +352,7 @@ void Initialize( lua_State *state )
 	LUA->PushNumber( 1 );
 	LUA->GetTable( -2 );
 	if( LUA->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
-		reporter_ref.Create( LUA );
+		reporter_ref.Create( );
 	else
 		LUA->ThrowError( "failed to locate AdvancedLuaErrorReporter" );
 
