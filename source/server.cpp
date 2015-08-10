@@ -80,15 +80,14 @@ static inline std::string Trim( const std::string &s )
 
 static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 {
-	int32_t funcs = shared::PushHookRun( lua, "ClientLuaError", false );
+	int32_t funcs = shared::PushHookRun( lua, "ClientLuaError" );
 	if( funcs == 0 )
 		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
 
 	int32_t args = 2;
 	lua->PushString( "ClientLuaError" );
 
-	lua->GetField( -funcs - args, "Entity" ); // get Entity function from global table
-	lua->Remove( -funcs - args - 1 ); // remove global table
+	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "Entity" );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 	{
 		lua->Pop( funcs + args );

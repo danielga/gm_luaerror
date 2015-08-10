@@ -17,55 +17,35 @@ static bool runtime = false;
 static std::string runtime_error;
 static GarrysMod::Lua::AutoReference runtime_stack;
 
-LUA_FUNCTION_STATIC( ErrorTraceback )
+int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook )
 {
-	std::string spaces( "\n  " );
-	std::ostringstream stream;
-	stream << LUA->GetString( 1 );
-
-	lua_Debug dbg = { 0 };
-	GarrysMod::Lua::ILuaInterface *lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
-	for( int32_t lvl = 1; lua->GetStack( lvl, &dbg ) == 1; ++lvl )
-	{
-		if( lua->GetInfo( "Sln", &dbg ) == 0 )
-			break;
-
-		stream
-			<< spaces
-			<< lvl
-			<< ". "
-			<< ( dbg.name == nullptr ? "unknown" : dbg.name )
-			<< " - "
-			<< dbg.short_src
-			<< ':'
-			<< dbg.currentline;
-		spaces += ' ';
-	}
-
-	LUA->PushString( stream.str( ).c_str( ) );
-	return 1;
-}
-
-int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook, bool cleanup )
-{
-	lua->PushSpecial( GarrysMod::Lua::SPECIAL_GLOB );
-
-	lua->GetField( -1, "hook" );
-
-	if( cleanup )
-		lua->Remove( -2 );
-
+	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "debug" );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
 	{
-		lua->ErrorNoHalt( "[%s] Global hook is not a table!\n", hook );
+		lua->ErrorNoHalt( "[%s] Global debug is not a table!\n", hook );
 		lua->Pop( 1 );
 		return 0;
 	}
 
-	lua->PushCFunction( ErrorTraceback );
+	lua->GetField( -1, "traceback" );
+	lua->Remove( -2 );
+	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
+	{
+		lua->ErrorNoHalt( "[%s] Global debug.traceback is not a function!\n", hook );
+		lua->Pop( 1 );
+		return 0;
+	}
 
-	lua->GetField( -2, "Run" );
-	lua->Remove( -3 );
+	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "hook" );
+	if( !lua->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
+	{
+		lua->ErrorNoHalt( "[%s] Global hook is not a table!\n", hook );
+		lua->Pop( 2 );
+		return 0;
+	}
+
+	lua->GetField( -1, "Run" );
+	lua->Remove( -2 );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 	{
 		lua->ErrorNoHalt( "[%s] Global hook.Run is not a function!\n", hook );
@@ -169,8 +149,10 @@ bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args
 
 LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
 {
+	const char *errstr = LUA->GetString( 1 );
+
 	runtime = true;
-	runtime_error = LUA->GetString( 1 );
+	runtime_error = errstr != nullptr ? errstr : "";
 	PushStackTable( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
 	runtime_stack.Create( );
 
@@ -298,20 +280,16 @@ static CLuaGameCallback callback;
 
 inline void DetourRuntime( lua_State *state )
 {
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
 	LUA->PushNumber( 1 );
 	LUA->PushCFunction( AdvancedLuaErrorReporter );
-	LUA->SetTable( -3 );
-	LUA->Pop( 1 );
+	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
 }
 
 inline void ResetRuntime( lua_State *state )
 {
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
 	LUA->PushNumber( 1 );
 	reporter_ref.Push( );
-	LUA->SetTable( -3 );
-	LUA->Pop( 1 );
+	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
 }
 
 LUA_FUNCTION_STATIC( EnableRuntimeDetour )
@@ -347,16 +325,12 @@ void Initialize( lua_State *state )
 
 	callback.SetLua( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
 
-	LUA->PushSpecial( GarrysMod::Lua::SPECIAL_REG );
-
 	LUA->PushNumber( 1 );
-	LUA->GetTable( -2 );
+	LUA->GetTable( GarrysMod::Lua::INDEX_REGISTRY );
 	if( LUA->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 		reporter_ref.Create( );
 	else
 		LUA->ThrowError( "failed to locate AdvancedLuaErrorReporter" );
-
-	LUA->Pop( 1 );
 
 	LUA->PushCFunction( EnableRuntimeDetour );
 	LUA->SetField( -2, "EnableRuntimeDetour" );
@@ -369,6 +343,7 @@ void Deinitialize( lua_State *state )
 {
 	ResetRuntime( state );
 	reporter_ref.Free( );
+	callback.Reset( );
 }
 
 }
