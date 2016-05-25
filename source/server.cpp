@@ -11,7 +11,7 @@
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <lua.hpp>
 #include <cstdint>
-#include <interfaces.hpp>
+#include <GarrysMod/Interfaces.hpp>
 #include <symbolfinder.hpp>
 #include <detours.h>
 #include <memory>
@@ -56,7 +56,7 @@ typedef void( *HandleClientLuaError_t )( CBasePlayer *player, const char *error 
 static std::unique_ptr< MologieDetours::Detour<HandleClientLuaError_t> > HandleClientLuaError_detour;
 static HandleClientLuaError_t HandleClientLuaError = nullptr;
 
-static inline std::string Trim( const std::string &s )
+inline std::string Trim( const std::string &s )
 {
 	std::string c = s;
 	c.erase(
