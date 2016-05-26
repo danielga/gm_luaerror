@@ -200,7 +200,7 @@ public:
 		callback->MsgColour( msg, color );
 	}
 
-	void LuaError( GarrysMod::Lua::CLuaError *error )
+	void LuaError( const std::string &error )
 	{
 		int32_t funcs = PushHookRun( lua, "LuaError" );
 		if( funcs == 0 )
@@ -209,9 +209,9 @@ public:
 		int32_t args = 3;
 		lua->PushString( "LuaError" );
 		lua->PushBool( runtime );
-		lua->PushString( runtime ? runtime_error.c_str( ) : error->text );
+		lua->PushString( runtime ? runtime_error.c_str( ) : error.c_str( ) );
 
-		std::istringstream errstream( runtime ? runtime_error : error->text );
+		std::istringstream errstream( runtime ? runtime_error : error.c_str( ) );
 		args += PushErrorProperties( lua, errstream );
 
 		if( runtime )
