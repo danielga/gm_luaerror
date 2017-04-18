@@ -278,14 +278,14 @@ private:
 
 static CLuaGameCallback callback;
 
-inline void DetourRuntime( lua_State *state )
+inline void DetourRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNumber( 1 );
 	LUA->PushCFunction( AdvancedLuaErrorReporter );
 	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
 }
 
-inline void ResetRuntime( lua_State *state )
+inline void ResetRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNumber( 1 );
 	reporter_ref.Push( );
@@ -297,9 +297,9 @@ LUA_FUNCTION_STATIC( EnableRuntimeDetour )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
 
 	if( LUA->GetBool( 1 ) )
-		DetourRuntime( state );
+		DetourRuntime( LUA );
 	else
-		ResetRuntime( state );
+		ResetRuntime( LUA );
 
 	LUA->PushBool( true );
 	return 1;
@@ -318,7 +318,7 @@ LUA_FUNCTION_STATIC( EnableCompiletimeDetour )
 	return 1;
 }
 
-void Initialize( lua_State *state )
+void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	reporter_ref.Setup( LUA );
 	runtime_stack.Setup( LUA );
@@ -339,9 +339,9 @@ void Initialize( lua_State *state )
 	LUA->SetField( -2, "EnableCompiletimeDetour" );
 }
 
-void Deinitialize( lua_State *state )
+void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
-	ResetRuntime( state );
+	ResetRuntime( LUA );
 	reporter_ref.Free( );
 	callback.Reset( );
 }

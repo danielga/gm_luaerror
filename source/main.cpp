@@ -31,20 +31,20 @@ GMOD_MODULE_OPEN( )
 {
 	LUA->CreateTable( );
 
-	LUA->PushString( "luaerror 1.2.3" );
+	LUA->PushString( "luaerror 1.2.4" );
 	LUA->SetField( -2, "Version" );
 
 	// version num follows LuaJIT style, xxyyzz
-	LUA->PushNumber( 10203 );
+	LUA->PushNumber( 10204 );
 	LUA->SetField( -2, "VersionNum" );
 
 #if defined LUAERROR_SERVER
 
-	server::Initialize( state );
+	server::Initialize( LUA );
 
 #endif
 
-	shared::Initialize( state );
+	shared::Initialize( LUA );
 
 	LUA->SetField( GarrysMod::Lua::INDEX_GLOBAL, "luaerror" );
 	return 0;
@@ -52,11 +52,11 @@ GMOD_MODULE_OPEN( )
 
 GMOD_MODULE_CLOSE( )
 {
-	shared::Deinitialize( state );
+	shared::Deinitialize( LUA );
 
 #if defined LUAERROR_SERVER
 
-	server::Deinitialize( state );
+	server::Deinitialize( LUA );
 
 #endif
 

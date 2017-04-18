@@ -1,10 +1,3 @@
-#include <cbase.h>
-
-#undef INVALID_HANDLE_VALUE
-
-#undef min
-#undef max
-
 #include <server.hpp>
 #include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
@@ -19,6 +12,8 @@
 #include <algorithm>
 #include <functional>
 #include <cctype>
+#include <eiface.h>
+#include <../game/server/player.h>
 
 IVEngineServer *engine = nullptr;
 
@@ -179,7 +174,7 @@ LUA_FUNCTION_STATIC( EnableClientDetour )
 	return 1;
 }
 
-void Initialize( lua_State *state )
+void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
 
@@ -199,7 +194,7 @@ void Initialize( lua_State *state )
 	LUA->SetField( -2, "EnableClientDetour" );
 }
 
-void Deinitialize( lua_State *state )
+void Deinitialize( GarrysMod::Lua::ILuaBase * )
 {
 	if( HandleClientLuaError_detour )
 		HandleClientLuaError_detour.reset( );
