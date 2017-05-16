@@ -46,7 +46,7 @@ static const size_t HandleClientLuaError_symlen = 0;
 
 #endif
 
-static const std::string main_binary = helpers::GetBinaryFileName(
+static const std::string main_binary = Helpers::GetBinaryFileName(
 	"server",
 	false,
 	true,
@@ -187,7 +187,7 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
 
-	engine = engine_loader.GetInterface<IVEngineServer>( INTERFACEVERSION_VENGINESERVER_VERSION_21 );
+	engine = engine_loader.GetInterface<IVEngineServer>( INTERFACEVERSION_VENGINESERVER );
 	if( engine == nullptr )
 		LUA->ThrowError( "failed to retrieve server engine interface" );
 
