@@ -22,7 +22,7 @@ namespace server
 
 #if defined _WIN32
 
-static const char HandleClientLuaError_sym[] = "\x55\x8B\xEC\x83\xEC\x08\xA1\x2A\x2A\x2A\x2A\xF3\x0F\x10\x00\x56";
+static const char HandleClientLuaError_sym[] = "\x55\x8B\xEC\x83\xEC\x08\xA1\x2A\x2A\x2A\x2A\x57\x8B\x7D\x08\xF3";
 static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
 
 #elif defined __linux
