@@ -262,7 +262,7 @@ private:
 
 #if defined _WIN32
 
-	static const uintptr_t CLuaGameCallback_offset = 192;
+	static const uintptr_t CLuaGameCallback_offset = 188;
 
 #elif defined __linux
 
