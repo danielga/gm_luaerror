@@ -6,8 +6,7 @@
 #include <cstdint>
 #include <GarrysMod/Interfaces.hpp>
 #include <symbolfinder.hpp>
-#include <detours.h>
-#include <memory>
+#include <hook.hpp>
 #include <sstream>
 #include <algorithm>
 #include <functional>
@@ -22,7 +21,8 @@ namespace server
 
 #if defined _WIN32
 
-static const char HandleClientLuaError_sym[] = "\x55\x8B\xEC\x83\xEC\x08\xA1\x2A\x2A\x2A\x2A\x57\x8B\x7D\x08\xF3";
+static const char HandleClientLuaError_sym[] =
+	"\x55\x8B\xEC\x83\xEC\x08\x8B\x0D\x2A\x2A\x2A\x2A\x57\x8B\x7D\x08";
 static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
 
 #elif defined __linux
@@ -34,7 +34,8 @@ static const size_t HandleClientLuaError_symlen = 0;
 
 #else
 
-static const char HandleClientLuaError_sym[] = "\x55\x89\xE5\x57\x56\x53\x83\xEC\x4C\x65\xA1\x2A\x2A\x2A\x2A\x89\x45\xE4";
+static const char HandleClientLuaError_sym[] =
+	"\x55\x89\xE5\x57\x56\x53\x83\xEC\x4C\x65\xA1\x2A\x2A\x2A\x2A\x89\x45\xE4";
 static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
 
 #endif
@@ -55,10 +56,9 @@ static const std::string main_binary = Helpers::GetBinaryFileName(
 static SourceSDK::FactoryLoader engine_loader( "engine", false );
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
-typedef void( *HandleClientLuaError_t )( CBasePlayer *player, const char *error );
+typedef void ( *HandleClientLuaError_t )( CBasePlayer *player, const char *error );
 
-static std::unique_ptr< MologieDetours::Detour<HandleClientLuaError_t> > HandleClientLuaError_detour;
-static HandleClientLuaError_t HandleClientLuaError = nullptr;
+static Detouring::Hook HandleClientLuaError_detour;
 
 inline std::string Trim( const std::string &s )
 {
@@ -86,7 +86,7 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 {
 	int32_t funcs = shared::PushHookRun( lua, "ClientLuaError" );
 	if( funcs == 0 )
-		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
+		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 
 	int32_t args = 2;
 	lua->PushString( "ClientLuaError" );
@@ -96,7 +96,7 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	{
 		lua->Pop( funcs + args );
 		lua->ErrorNoHalt( "[ClientLuaError] Global Entity is not a function!\n" );
-		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
+		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 	}
 	lua->PushNumber( player->entindex( ) );
 	lua->Call( 1, 1 );
@@ -149,37 +149,15 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	}
 
 	if( shared::RunHook( lua, "ClientLuaError", args, funcs ) )
-		return HandleClientLuaError_detour->GetOriginalFunction( )( player, error );
+		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 }
 
 LUA_FUNCTION_STATIC( EnableClientDetour )
 {
 	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
-
-	bool enable = LUA->GetBool( 1 );
-	if( enable && !HandleClientLuaError_detour )
-	{
-		bool errored = false;
-		try
-		{
-			HandleClientLuaError_detour.reset( new MologieDetours::Detour<HandleClientLuaError_t>(
-				HandleClientLuaError, HandleClientLuaError_d
-			) );
-		}
-		catch( const std::exception &e )
-		{
-			errored = true;
-			LUA->PushNil( );
-			LUA->PushString( e.what( ) );
-		}
-
-		if( errored )
-			return 2;
-	}
-	else if( !enable && HandleClientLuaError_detour )
-		HandleClientLuaError_detour.reset( );
-
-	LUA->PushBool( true );
+	LUA->PushBool( LUA->GetBool( 1 ) ?
+		HandleClientLuaError_detour.Enable( ) :
+		HandleClientLuaError_detour.Disable( ) );
 	return 1;
 }
 
@@ -193,11 +171,15 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	SymbolFinder symfinder;
 
-	HandleClientLuaError = reinterpret_cast<HandleClientLuaError_t>( symfinder.ResolveOnBinary(
+	HandleClientLuaError_t HandleClientLuaError =
+		reinterpret_cast<HandleClientLuaError_t>( symfinder.ResolveOnBinary(
 			main_binary.c_str( ), HandleClientLuaError_sym, HandleClientLuaError_symlen
-	) );
+		) );
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
+
+	if( !HandleClientLuaError_detour.Create( HandleClientLuaError, HandleClientLuaError_d ) )
+		LUA->ThrowError( "unable to create a hook for HandleClientLuaError" );
 
 	LUA->PushCFunction( EnableClientDetour );
 	LUA->SetField( -2, "EnableClientDetour" );
@@ -205,8 +187,7 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 void Deinitialize( GarrysMod::Lua::ILuaBase * )
 {
-	if( HandleClientLuaError_detour )
-		HandleClientLuaError_detour.reset( );
+	HandleClientLuaError_detour.Destroy( );
 }
 
 }
