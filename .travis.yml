@@ -1,0 +1,50 @@
+language: cpp
+compiler: gcc
+os:
+  - linux
+  - osx
+osx_image: xcode7.3
+if: tag IS present
+cache:
+  directories:
+    - "$TRAVIS_BUILD_DIR/dependencies"
+    - "$TRAVIS_BUILD_DIR/projects"
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - linux-libc-dev:i386
+      - gcc-4.9
+      - gcc-4.9-multilib
+      - g++-4.9
+      - g++-4.9-multilib
+install:
+  - export MODULE_NAME="luaerror"
+  - export DEPENDENCIES="$TRAVIS_BUILD_DIR/dependencies"
+  - export GARRYSMOD_COMMON="$DEPENDENCIES/garrysmod_common"
+  - export SOURCE_SDK="$DEPENDENCIES/sourcesdk-minimal"
+  - export TARGET_OS=$TRAVIS_OS_NAME
+  - export REPOSITORY_DIR=$TRAVIS_BUILD_DIR
+  - if [ $TRAVIS_OS_NAME = "osx" ]; then
+      export PREMAKE5="$DEPENDENCIES/macosx/premake-core/premake5";
+      export PROJECT_OS=macosx;
+      export CXX=g++;
+      export CC=gcc;
+    elif [ $TRAVIS_OS_NAME = "linux" ]; then
+      export PREMAKE5="$DEPENDENCIES/linux/premake-core/premake5";
+      export PROJECT_OS=linux;
+      export CXX=g++-4.9;
+      export CC=gcc-4.9;
+    fi
+script: "$TRAVIS_BUILD_DIR/ci.sh"
+deploy:
+  provider: releases
+  skip_cleanup: true
+  file:
+    - "$TRAVIS_BUILD_DIR/projects/$PROJECT_OS/gmake/release/gmsv_${MODULE_NAME}_$TARGET_OS.dll"
+    - "$TRAVIS_BUILD_DIR/projects/$PROJECT_OS/gmake/release/gmcl_${MODULE_NAME}_$TARGET_OS.dll"
+  on:
+    tags: true
+  api_key:
+    secure: W9DotAUb068MYIUp3lbvxcdZTglYwNQIAIJjzj6KWL4lz4rZdNV31ZsvvMmyUew10enNAY0GJfKEkWFB38ljVSokJbvJIvqjSCdzTRHYUew7gAFRC51yQ+kuH1zXhaqfp8BZrg7Z+aYXzXaIZ09P/y06grybbJ5RUq5k8G1ZiVUe52kP3GqevI47A4rrbpmvuwTDuW1ldCIxd/M2BwbXRTwrTgKg9PKvwKQXoa5VLMulajJXBeN3+x3LhzyB/Rz01XuQm5GqOLRxxkTL7CEnYmT4gymglR0ApzNfXa7FFCgF3KeV/y7rdCR4OrIaKC7BdjpRTFEaDVqaJzti9GgwtnbAG34FoYUd7twIhbILynmhM6z/QH5zPe4/hmM2doga+vEz34MK4+ogY4fL0+KOt3Ye/KB+oGU1LUKgzmJ9XvREY5MCw+CtNJUrVS/WIYWCe8AkA1IgAOd6xMyLtag8OunLXMHWJSeJ4i+ufzv0bQ1Ml2Ddn3NrdRi+p8mtr5kp+ecR6trQovYdtYnBwk4G8TYxLr8ZotP6Z4qrppH++r8maxqTF5FNLnkshhuCFGWCayn9V72AYiFXDWuXRfONvE6hcWftDe+zOXm5UpQ/qfb/QoyiaYVl6Ir3003qUriAenFoKDgrc7byAU1SB64jyDNqXcsk7ge/DAiAKmv6u7s=
