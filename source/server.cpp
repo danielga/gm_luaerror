@@ -178,7 +178,9 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
-	if( !HandleClientLuaError_detour.Create( HandleClientLuaError, HandleClientLuaError_d ) )
+	if( !HandleClientLuaError_detour.Create(
+		&HandleClientLuaError, reinterpret_cast<void *>( &HandleClientLuaError_d )
+	) )
 		LUA->ThrowError( "unable to create a hook for HandleClientLuaError" );
 
 	LUA->PushCFunction( EnableClientDetour );

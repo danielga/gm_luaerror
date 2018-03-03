@@ -90,7 +90,7 @@ static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 	lua->CreateTable( );
 
 	int32_t lvl = 0;
-	lua_Debug dbg = { 0 };
+	lua_Debug dbg;
 	while( lua->GetStack( lvl, &dbg ) == 1 && lua->GetInfo( "Slnu", &dbg ) == 1 )
 	{
 		lua->PushNumber( ++lvl );
