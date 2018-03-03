@@ -3,7 +3,7 @@
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <lua.hpp>
-#include <cstdint>
+#include <stdint.h>
 #include <GarrysMod/Interfaces.hpp>
 #include <symbolfinder.hpp>
 #include <hook.hpp>

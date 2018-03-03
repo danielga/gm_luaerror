@@ -4,7 +4,6 @@
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoReference.h>
 #include <lua.hpp>
-#include <cstdint>
 #include <string>
 #include <sstream>
 
