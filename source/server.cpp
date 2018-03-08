@@ -179,7 +179,7 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
 	if( !HandleClientLuaError_detour.Create(
-		&HandleClientLuaError, reinterpret_cast<void *>( &HandleClientLuaError_d )
+		HandleClientLuaError, reinterpret_cast<void *>( &HandleClientLuaError_d )
 	) )
 		LUA->ThrowError( "unable to create a hook for HandleClientLuaError" );
 

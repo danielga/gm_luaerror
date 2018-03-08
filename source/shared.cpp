@@ -269,7 +269,7 @@ private:
 
 #elif defined __APPLE__
 
-	static const uintptr_t CLuaGameCallback_offset = 47;
+	static const uintptr_t CLuaGameCallback_offset = 48;
 
 #endif
 
