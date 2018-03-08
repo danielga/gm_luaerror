@@ -171,10 +171,9 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	SymbolFinder symfinder;
 
-	HandleClientLuaError_t HandleClientLuaError =
-		reinterpret_cast<HandleClientLuaError_t>( symfinder.ResolveOnBinary(
-			main_binary.c_str( ), HandleClientLuaError_sym, HandleClientLuaError_symlen
-		) );
+	void *HandleClientLuaError = symfinder.ResolveOnBinary(
+		main_binary.c_str( ), HandleClientLuaError_sym, HandleClientLuaError_symlen
+	);
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
