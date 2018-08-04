@@ -32,3 +32,6 @@ CreateWorkspace({name = "luaerror", abi_compatible = true})
 			"../source/shared.cpp",
 			"../source/shared.hpp"
 		})
+		IncludeSDKCommon()
+		IncludeSDKTier0()
+		IncludeSDKTier1()

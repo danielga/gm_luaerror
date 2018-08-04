@@ -13,6 +13,7 @@
 #include <cctype>
 #include <eiface.h>
 #include <../game/server/player.h>
+#include <regex>
 
 IVEngineServer *engine = nullptr;
 
@@ -47,6 +48,8 @@ static const std::string main_binary = Helpers::GetBinaryFileName(
 static SourceSDK::FactoryLoader engine_loader( "engine", false );
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
+static std::regex client_error_addon_matcher( "^\\[(.+)\\] ", std::regex_constants::optimize );
+
 typedef void ( *HandleClientLuaError_t )( CBasePlayer *player, const char *error );
 
 static Detouring::Hook HandleClientLuaError_detour;
@@ -79,13 +82,12 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	if( funcs == 0 )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 
-	int32_t args = 2;
 	lua->PushString( "ClientLuaError" );
 
 	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "Entity" );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 	{
-		lua->Pop( funcs + args );
+		lua->Pop( funcs + 2 );
 		lua->ErrorNoHalt( "[ClientLuaError] Global Entity is not a function!\n" );
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 	}
@@ -93,14 +95,18 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	lua->Call( 1, 1 );
 
 	std::string cleanerror = Trim( error );
-	if( cleanerror.compare( 0, 8, "[ERROR] " ) == 0 )
-		cleanerror = cleanerror.erase( 0, 8 );
+	std::string addon;
+	std::smatch matches;
+	if( std::regex_search( cleanerror, matches, client_error_addon_matcher ) )
+	{
+		addon = matches[1];
+		cleanerror.erase( 0, 1 + addon.size( ) + 1 + 1 ); // [addon]:space:
+	}
 
-	args += 2;
 	lua->PushString( cleanerror.c_str( ) );
 
 	std::istringstream errstream( cleanerror );
-	args += shared::PushErrorProperties( lua, errstream );
+	int32_t errorPropsCount = shared::PushErrorProperties( lua, errstream );
 
 	lua->CreateTable( );
 	while( errstream )
@@ -139,7 +145,12 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 		lua->SetTable( -3 );
 	}
 
-	if( shared::RunHook( lua, "ClientLuaError", args, funcs ) )
+	if( addon.empty( ) )
+		lua->PushNil( );
+	else
+		lua->PushString( addon.c_str( ) );
+
+	if( shared::RunHook( lua, "ClientLuaError", 5 + errorPropsCount, funcs ) )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 }
 

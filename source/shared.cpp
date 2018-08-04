@@ -7,6 +7,15 @@
 #include <string>
 #include <sstream>
 
+#include <filesystem_stdio.h>
+#include <GarrysMod/Interfaces.hpp>
+
+#if defined LUAERROR_SERVER
+
+#include <symbolfinder.hpp>
+
+#endif
+
 namespace shared
 {
 
@@ -15,6 +24,28 @@ static GarrysMod::Lua::AutoReference reporter_ref;
 static bool runtime = false;
 static std::string runtime_error;
 static GarrysMod::Lua::AutoReference runtime_stack;
+
+static SourceSDK::FactoryLoader filesystem_loader( "filesystem_stdio", false, false );
+static CFileSystem_Stdio *filesystem = nullptr;
+
+#if defined LUAERROR_SERVER
+
+static std::string dedicated_binary =
+	Helpers::GetBinaryFileName( "dedicated", false, true, "bin/" );
+
+#if defined _WIN32
+
+static const char FileSystemFactory_sym[] = "\x55\x8B\xEC\x68\x2A\x2A\x2A\x2A\xFF\x75\x08\xE8";
+static const size_t FileSystemFactory_symlen = sizeof( FileSystemFactory_sym ) - 1;
+
+#elif defined __linux || defined __APPLE__
+
+static const char FileSystemFactory_sym[] = "@_Z17FileSystemFactoryPKcPi";
+static const size_t FileSystemFactory_symlen = 0;
+
+#endif
+
+#endif
 
 int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook )
 {
@@ -55,7 +86,14 @@ int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook )
 	return 2;
 }
 
-int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error )
+struct ErrorProperties
+{
+	std::string source_file;
+	int32_t source_line = -1;
+	std::string error_string;
+};
+
+int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error, ErrorProperties &props )
 {
 	std::string source_file;
 	std::getline( error, source_file, ':' );
@@ -68,20 +106,28 @@ int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstr
 	std::string error_string;
 	std::getline( error, error_string );
 
-	if( error ) // our stream is still valid
-	{
-		lua->PushString( source_file.c_str( ) );
-		lua->PushNumber( source_line );
-		lua->PushString( error_string.c_str( ) );
-	}
-	else // it shouldn't have reached eof by now
+	if( !error ) // our stream is still valid
 	{
 		lua->PushNil( );
 		lua->PushNil( );
 		lua->PushNil( );
+		return 3;
 	}
 
+	props.source_file = source_file;
+	props.source_line = source_line;
+	props.error_string = error_string;
+
+	lua->PushString( props.source_file.c_str( ) );
+	lua->PushNumber( props.source_line );
+	lua->PushString( props.error_string.c_str( ) );
 	return 3;
+}
+
+int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error )
+{
+	ErrorProperties props;
+	return PushErrorProperties( lua, error, props );
 }
 
 static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
@@ -146,15 +192,39 @@ bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args
 	return call_original;
 }
 
+inline std::string FindOwnerWorkshopAddon( const std::string &source )
+{
+	if( source.empty( ) || source == "[C]" )
+		return { };
+
+	const auto addons = filesystem->Addons( );
+	if( addons == nullptr )
+		return { };
+
+	const auto addon = addons->FindFileOwner( source );
+	if( addon == nullptr )
+		return { };
+
+	return addon->title;
+}
+
 LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
 {
 	const char *errstr = LUA->GetString( 1 );
 
+	auto lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
+
 	runtime = true;
-	runtime_error = errstr != nullptr ? errstr : "";
-	PushStackTable( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
+
+	if( errstr != nullptr )
+		runtime_error = errstr;
+	else
+		runtime_error.clear( );
+
+	PushStackTable( lua );
 	runtime_stack.Create( );
 
+	// TODO: Fix extra stack entry, call the function directly?
 	reporter_ref.Push( );
 	LUA->Push( 1 );
 	LUA->Call( 1, 1 );
@@ -199,30 +269,40 @@ public:
 		callback->MsgColour( msg, color );
 	}
 
-	void LuaError( const std::string &error )
+	void LuaError( const CLuaError *error )
 	{
 		int32_t funcs = PushHookRun( lua, "LuaError" );
 		if( funcs == 0 )
 			return callback->LuaError( error );
 
+		const std::string &errstr = runtime ? runtime_error : error->message;
+
 		int32_t args = 3;
 		lua->PushString( "LuaError" );
 		lua->PushBool( runtime );
-		lua->PushString( runtime ? runtime_error.c_str( ) : error.c_str( ) );
+		lua->PushString( errstr.c_str( ) );
 
-		std::istringstream errstream( runtime ? runtime_error : error.c_str( ) );
-		args += PushErrorProperties( lua, errstream );
+		std::istringstream errstream( errstr );
+		ErrorProperties props;
+		args += PushErrorProperties( lua, errstream, props );
 
 		if( runtime )
 		{
+			args += 1;
 			runtime_stack.Push( );
 			runtime_stack.Free( );
-			args += 1;
 		}
 		else
 			args += PushStackTable( lua );
 
 		runtime = false;
+
+		args += 1;
+		const std::string source_addon = FindOwnerWorkshopAddon( props.source_file );
+		if( source_addon.empty( ) )
+			lua->PushNil( );
+		else
+			lua->PushString( source_addon.c_str( ) );
 
 		if( RunHook( lua, "LuaError", args, funcs ) )
 			return callback->LuaError( error );
@@ -319,6 +399,24 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	runtime_stack.Setup( LUA );
 
 	callback.SetLua( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
+
+#if defined LUAERROR_SERVER
+
+	SymbolFinder symfinder;
+
+	CreateInterfaceFn factory = reinterpret_cast<CreateInterfaceFn>( symfinder.ResolveOnBinary(
+		dedicated_binary.c_str( ), FileSystemFactory_sym, FileSystemFactory_symlen
+	) );
+	if( factory != nullptr )
+		filesystem = static_cast<CFileSystem_Stdio *>( factory( FILESYSTEM_INTERFACE_VERSION, nullptr ) );
+
+#endif
+
+	if( filesystem == nullptr )
+		filesystem = filesystem_loader.GetInterface<CFileSystem_Stdio>( FILESYSTEM_INTERFACE_VERSION );
+
+	if( filesystem == nullptr )
+		LUA->ThrowError( "unable to initialize IFileSystem" );
 
 	LUA->PushNumber( 1 );
 	LUA->GetTable( GarrysMod::Lua::INDEX_REGISTRY );
