@@ -25,25 +25,16 @@ static const char HandleClientLuaError_sym[] =
 	"\x55\x8B\xEC\x83\xEC\x08\x8B\x0D\x2A\x2A\x2A\x2A\x57\x8B\x7D\x08";
 static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
 
-#elif defined __linux
-
-#if IS_SERVERSIDE
+#elif ( defined __linux && IS_SERVERSIDE ) || defined __APPLE__
 
 static const char HandleClientLuaError_sym[] = "@_Z20HandleClientLuaErrorP11CBasePlayerPKc";
 static const size_t HandleClientLuaError_symlen = 0;
 
-#else
+#elif ( defined __linux && !IS_SERVERSIDE )
 
 static const char HandleClientLuaError_sym[] =
 	"\x55\x89\xE5\x57\x56\x53\x83\xEC\x4C\x65\xA1\x2A\x2A\x2A\x2A\x89\x45\xE4";
 static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
-
-#endif
-
-#elif defined __APPLE__
-
-static const char HandleClientLuaError_sym[] = "@__Z20HandleClientLuaErrorP11CBasePlayerPKc";
-static const size_t HandleClientLuaError_symlen = 0;
 
 #endif
 
