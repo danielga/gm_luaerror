@@ -192,7 +192,7 @@ bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args
 	return call_original;
 }
 
-inline std::string FindOwnerWorkshopAddon( const std::string &source )
+inline std::string FindWorkshopAddonFileOwner( const std::string &source )
 {
 	if( source.empty( ) || source == "[C]" )
 		return { };
@@ -298,7 +298,7 @@ public:
 		runtime = false;
 
 		args += 1;
-		const std::string source_addon = FindOwnerWorkshopAddon( props.source_file );
+		const std::string source_addon = FindWorkshopAddonFileOwner( props.source_file );
 		if( source_addon.empty( ) )
 			lua->PushNil( );
 		else
@@ -393,6 +393,18 @@ LUA_FUNCTION_STATIC( EnableCompiletimeDetour )
 	return 1;
 }
 
+LUA_FUNCTION_STATIC( FindWorkshopAddonFileOwnerLua )
+{
+	const char *path = LUA->CheckString( 1 );
+
+	const std::string owner = FindWorkshopAddonFileOwner( path );
+	if( owner.empty( ) )
+		return 0;
+
+	LUA->PushString( owner.c_str( ) );
+	return 1;
+}
+
 void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	reporter_ref.Setup( LUA );
@@ -430,6 +442,9 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	LUA->PushCFunction( EnableCompiletimeDetour );
 	LUA->SetField( -2, "EnableCompiletimeDetour" );
+
+	LUA->PushCFunction( FindWorkshopAddonFileOwnerLua );
+	LUA->SetField( -2, "FindWorkshopAddonFileOwner" );
 }
 
 void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
