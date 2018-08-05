@@ -259,17 +259,13 @@ private:
 	GarrysMod::Lua::ILuaInterface *lua;
 	GarrysMod::Lua::ILuaGameCallback *callback;
 
-#if defined _WIN32
+#if defined _WIN32 || defined __linux
 
 	static const uintptr_t CLuaGameCallback_offset = 188;
 
-#elif defined __linux
-
-	static const uintptr_t CLuaGameCallback_offset = 47;
-
 #elif defined __APPLE__
 
-	static const uintptr_t CLuaGameCallback_offset = 48;
+	static const uintptr_t CLuaGameCallback_offset = 192;
 
 #endif
 
