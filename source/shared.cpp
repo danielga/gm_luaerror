@@ -1,25 +1,17 @@
 #include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
+#include <GarrysMod/Interfaces.hpp>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoReference.h>
+#include <filesystem_stdio.h>
+#include <symbolfinder.hpp>
 #include <lua.hpp>
 #include <string>
 #include <sstream>
 
-#include <filesystem_stdio.h>
-#include <GarrysMod/Interfaces.hpp>
-
-#if defined LUAERROR_SERVER
-
-#include <symbolfinder.hpp>
-
-#endif
-
 namespace shared
 {
-
-static GarrysMod::Lua::AutoReference reporter_ref;
 
 static bool runtime = false;
 static std::string runtime_error;
@@ -28,9 +20,34 @@ static GarrysMod::Lua::AutoReference runtime_stack;
 static SourceSDK::FactoryLoader filesystem_loader( "filesystem_stdio", false, false );
 static CFileSystem_Stdio *filesystem = nullptr;
 
+static const std::string lua_shared_binary =
+	Helpers::GetBinaryFileName( "lua_shared", false, IS_SERVERSIDE, "garrysmod/bin/" );
+
+typedef int32_t ( *AdvancedLuaErrorReporter_t )( lua_State *state );
+static AdvancedLuaErrorReporter_t AdvancedLuaErrorReporter = nullptr;
+
+#if defined _WIN32
+
+static const char AdvancedLuaErrorReporter_sym[] =
+	"\x55\x8B\xEC\x81\xEC\x2A\x2A\x2A\x2A\x8B\x0D\x2A\x2A\x2A\x2A\x8B";
+static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorReporter_sym ) - 1;
+
+#elif ( defined __linux && IS_SERVERSIDE ) || defined __APPLE__
+
+static const char AdvancedLuaErrorReporter_sym[] = "@_Z24AdvancedLuaErrorReporterP9lua_State";
+static const size_t AdvancedLuaErrorReporter_symlen = 0;
+
+#elif ( defined __linux && !IS_SERVERSIDE )
+
+static const char AdvancedLuaErrorReporter_sym[] =
+	"\x55\x89\xE5\x57\x56\x53\x83\xEC\x2c\x8B\x15\x2A\x2A\x2A\x2A\x8B";
+static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorReporter_sym ) - 1;
+
+#endif
+
 #if defined LUAERROR_SERVER
 
-static std::string dedicated_binary =
+static const std::string dedicated_binary =
 	Helpers::GetBinaryFileName( "dedicated", false, true, "bin/" );
 
 #if defined _WIN32
@@ -289,7 +306,7 @@ inline std::string FindWorkshopAddonFileOwner( const std::string &source )
 	return addon->title;
 }
 
-LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
+LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter_detour )
 {
 	const char *errstr = LUA->GetString( 1 );
 
@@ -305,11 +322,7 @@ LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter )
 	PushStackTable( lua );
 	runtime_stack.Create( );
 
-	// TODO: Fix extra stack entry, call the function directly?
-	reporter_ref.Push( );
-	LUA->Push( 1 );
-	LUA->Call( 1, 1 );
-	return 1;
+	return AdvancedLuaErrorReporter( LUA->GetState( ) );
 }
 
 class CLuaGameCallback : public GarrysMod::Lua::ILuaGameCallback
@@ -358,14 +371,13 @@ public:
 
 		const std::string &errstr = runtime ? runtime_error : error->message;
 
-		int32_t args = 3;
 		lua->PushString( "LuaError" );
 		lua->PushBool( runtime );
 		lua->PushString( errstr.c_str( ) );
 
 		std::istringstream errstream( errstr );
 		ErrorProperties props;
-		args += PushErrorProperties( lua, errstream, props );
+		int32_t args = PushErrorProperties( lua, errstream, props );
 
 		if( runtime )
 		{
@@ -378,14 +390,13 @@ public:
 
 		runtime = false;
 
-		args += 1;
 		const std::string source_addon = FindWorkshopAddonFileOwner( props.source_file );
 		if( source_addon.empty( ) )
 			lua->PushNil( );
 		else
 			lua->PushString( source_addon.c_str( ) );
 
-		if( RunHook( lua, "LuaError", args, funcs ) )
+		if( RunHook( lua, "LuaError", 4 + args, funcs ) )
 			return callback->LuaError( error );
 	}
 
@@ -437,14 +448,14 @@ static CLuaGameCallback callback;
 inline void DetourRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNumber( 1 );
-	LUA->PushCFunction( AdvancedLuaErrorReporter );
+	LUA->PushCFunction( AdvancedLuaErrorReporter_detour );
 	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
 }
 
 inline void ResetRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
 	LUA->PushNumber( 1 );
-	reporter_ref.Push( );
+	LUA->PushCFunction( AdvancedLuaErrorReporter );
 	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
 }
 
@@ -488,35 +499,38 @@ LUA_FUNCTION_STATIC( FindWorkshopAddonFileOwnerLua )
 
 void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
-	reporter_ref.Setup( LUA );
 	runtime_stack.Setup( LUA );
 
 	callback.SetLua( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
 
-#if defined LUAERROR_SERVER
-
 	SymbolFinder symfinder;
+
+	AdvancedLuaErrorReporter =
+		reinterpret_cast<AdvancedLuaErrorReporter_t>( symfinder.ResolveOnBinary(
+		lua_shared_binary.c_str( ), AdvancedLuaErrorReporter_sym, AdvancedLuaErrorReporter_symlen
+	) );
+	if( AdvancedLuaErrorReporter == nullptr )
+		LUA->ThrowError( "unable to obtain AdvancedLuaErrorReporter" );
+
+#if defined LUAERROR_SERVER
 
 	CreateInterfaceFn factory = reinterpret_cast<CreateInterfaceFn>( symfinder.ResolveOnBinary(
 		dedicated_binary.c_str( ), FileSystemFactory_sym, FileSystemFactory_symlen
 	) );
 	if( factory != nullptr )
-		filesystem = static_cast<CFileSystem_Stdio *>( factory( FILESYSTEM_INTERFACE_VERSION, nullptr ) );
+		filesystem = static_cast<CFileSystem_Stdio *>(
+			factory( FILESYSTEM_INTERFACE_VERSION, nullptr )
+		);
 
 #endif
 
 	if( filesystem == nullptr )
-		filesystem = filesystem_loader.GetInterface<CFileSystem_Stdio>( FILESYSTEM_INTERFACE_VERSION );
+		filesystem = filesystem_loader.GetInterface<CFileSystem_Stdio>(
+			FILESYSTEM_INTERFACE_VERSION
+		);
 
 	if( filesystem == nullptr )
 		LUA->ThrowError( "unable to initialize IFileSystem" );
-
-	LUA->PushNumber( 1 );
-	LUA->GetTable( GarrysMod::Lua::INDEX_REGISTRY );
-	if( LUA->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
-		reporter_ref.Create( );
-	else
-		LUA->ThrowError( "failed to locate AdvancedLuaErrorReporter" );
 
 	LUA->PushCFunction( EnableRuntimeDetour );
 	LUA->SetField( -2, "EnableRuntimeDetour" );
@@ -531,7 +545,6 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	ResetRuntime( LUA );
-	reporter_ref.Free( );
 	callback.Reset( );
 }
 
