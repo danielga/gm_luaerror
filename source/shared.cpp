@@ -130,16 +130,97 @@ int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstr
 	return PushErrorProperties( lua, error, props );
 }
 
+inline bool GetUpvalues( GarrysMod::Lua::ILuaInterface *lua, int32_t funcidx )
+{
+	if( funcidx < 0 )
+		funcidx = lua->Top( ) + funcidx + 1;
+
+	int32_t idx = 1;
+	const char *name = lua->GetUpvalue( funcidx, idx );
+	if( name == nullptr )
+		return false;
+
+	// Keep popping until we either reach the end or until we reach a valid upvalue
+	while( name[0] == '\0' )
+	{
+		lua->Pop( 1 );
+
+		if( ( name = lua->GetUpvalue( funcidx, ++idx ) ) == nullptr )
+			return false;
+	}
+
+	lua->CreateTable( );
+
+	// Push the last upvalue to the top
+	lua->Push( -2 );
+	// And remove it from its previous location
+	lua->Remove( -3 );
+
+	do
+		if( name[0] != '\0' )
+			lua->SetField( -2, name );
+		else
+			lua->Pop( 1 );
+	while( ( name = lua->GetUpvalue( funcidx, ++idx ) ) != nullptr );
+
+	return true;
+}
+
+inline bool GetLocals( GarrysMod::Lua::ILuaInterface *lua, lua_Debug &dbg )
+{
+	int32_t idx = 1;
+	const char *name = lua->GetLocal( &dbg, idx );
+	if( name == nullptr )
+		return false;
+
+	// Keep popping until we either reach the end or until we reach a valid local
+	while( name[0] == '(' )
+	{
+		lua->Pop( 1 );
+
+		if( ( name = lua->GetLocal( &dbg, ++idx ) ) == nullptr )
+			return false;
+	}
+
+	lua->CreateTable( );
+
+	// Push the last local to the top
+	lua->Push( -2 );
+	// And remove it from its previous location
+	lua->Remove( -3 );
+
+	do
+		if( name[0] != '(' )
+			lua->SetField( -2, name );
+		else
+			lua->Pop( 1 );
+	while( ( name = lua->GetLocal( &dbg, ++idx ) ) != nullptr );
+
+	return true;
+}
+
 static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 {
 	lua->CreateTable( );
 
 	int32_t lvl = 0;
 	lua_Debug dbg;
-	while( lua->GetStack( lvl, &dbg ) == 1 && lua->GetInfo( "Slnu", &dbg ) == 1 )
+	while( lua->GetStack( lvl, &dbg ) == 1 && lua->GetInfo( "SfLlnu", &dbg ) == 1 )
 	{
 		lua->PushNumber( ++lvl );
 		lua->CreateTable( );
+
+		if( GetUpvalues( lua, -4 ) )
+			lua->SetField( -2, "upvalues" );
+
+		if( GetLocals( lua, dbg ) )
+			lua->SetField( -2, "locals" );
+
+		lua->Push( -4 );
+		lua->SetField( -2, "func" );
+
+		lua->Push( -3 );
+		lua->SetField( -2, "activelines" );
 
 		lua->PushNumber( dbg.event );
 		lua->SetField( -2, "event" );
@@ -171,10 +252,10 @@ static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 		lua->PushString( dbg.short_src );
 		lua->SetField( -2, "short_src" );
 
-		lua->PushNumber( dbg.i_ci );
-		lua->SetField( -2, "i_ci" );
+		lua->SetTable( -5 );
 
-		lua->SetTable( -3 );
+		// Pop activelines and func
+		lua->Pop( 2 );
 	}
 
 	return 1;
