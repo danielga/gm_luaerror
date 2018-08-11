@@ -290,20 +290,16 @@ bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args
 	return call_original;
 }
 
-inline std::string FindWorkshopAddonFileOwner( const std::string &source )
+inline const IAddonSystem::Information *FindWorkshopAddonFromFile( const std::string &source )
 {
 	if( source.empty( ) || source == "[C]" )
-		return { };
+		return nullptr;
 
 	const auto addons = filesystem->Addons( );
 	if( addons == nullptr )
-		return { };
+		return nullptr;
 
-	const auto addon = addons->FindFileOwner( source );
-	if( addon == nullptr )
-		return { };
-
-	return addon->title;
+	return addons->FindFileOwner( source );
 }
 
 LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter_detour )
@@ -390,13 +386,19 @@ public:
 
 		runtime = false;
 
-		const std::string source_addon = FindWorkshopAddonFileOwner( props.source_file );
-		if( source_addon.empty( ) )
+		const auto source_addon = FindWorkshopAddonFromFile( props.source_file );
+		if( source_addon == nullptr )
+		{
 			lua->PushNil( );
+			lua->PushNil( );
+		}
 		else
-			lua->PushString( source_addon.c_str( ) );
+		{
+			lua->PushString( source_addon->title.c_str( ) );
+			lua->PushString( std::to_string( source_addon->wsid ).c_str( ) );
+		}
 
-		if( RunHook( lua, "LuaError", 4 + args, funcs ) )
+		if( RunHook( lua, "LuaError", 5 + args, funcs ) )
 			return callback->LuaError( error );
 	}
 
@@ -489,12 +491,13 @@ LUA_FUNCTION_STATIC( FindWorkshopAddonFileOwnerLua )
 {
 	const char *path = LUA->CheckString( 1 );
 
-	const std::string owner = FindWorkshopAddonFileOwner( path );
-	if( owner.empty( ) )
+	const auto owner = FindWorkshopAddonFromFile( path );
+	if( owner == nullptr )
 		return 0;
 
-	LUA->PushString( owner.c_str( ) );
-	return 1;
+	LUA->PushString( owner->title.c_str( ) );
+	LUA->PushString( std::to_string( owner->wsid ).c_str( ) );
+	return 2;
 }
 
 void Initialize( GarrysMod::Lua::ILuaBase *LUA )
