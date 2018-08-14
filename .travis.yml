@@ -14,6 +14,7 @@ addons:
   apt:
     packages:
       - linux-libc-dev:i386
+      - g++-multilib
 install:
   - export MODULE_NAME="luaerror"
   - export REPOSITORY_DIR="$TRAVIS_BUILD_DIR"
