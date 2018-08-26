@@ -57,7 +57,7 @@ static Detouring::Hook HandleClientLuaError_detour;
 inline std::string Trim( const std::string &s )
 {
 	std::string c = s;
-	auto not_isspace = std::not1( std::function<int( int )>( isspace ) );
+	auto not_isspace = std::not_fn( isspace );
 	// remote trailing "spaces"
 	c.erase( std::find_if( c.rbegin( ), c.rend( ), not_isspace ).base( ), c.end( ) );
 	// remote initial "spaces"

@@ -23,13 +23,15 @@ static CFileSystem_Stdio *filesystem = nullptr;
 static const std::string lua_shared_binary =
 	Helpers::GetBinaryFileName( "lua_shared", false, IS_SERVERSIDE, "garrysmod/bin/" );
 
+static bool runtime_detoured = false;
+static bool compiletime_detoured = false;
 typedef int32_t ( *AdvancedLuaErrorReporter_t )( lua_State *state );
 static AdvancedLuaErrorReporter_t AdvancedLuaErrorReporter = nullptr;
 
 #if defined _WIN32
 
 static const char AdvancedLuaErrorReporter_sym[] =
-	"\x55\x8B\xEC\x81\xEC\x2A\x2A\x2A\x2A\x8B\x0D\x2A\x2A\x2A\x2A\x8B";
+	"\x55\x8B\xEC\x8B\x0D\x2A\x2A\x2A\x2A\x56\x57\x8B\xB9\x0C\x10\x00";
 static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorReporter_sym ) - 1;
 
 #elif ( defined __linux && IS_SERVERSIDE ) || defined __APPLE__
@@ -447,18 +449,54 @@ private:
 
 static CLuaGameCallback callback;
 
+inline void DetourCompiletime( )
+{
+	if( compiletime_detoured )
+		return;
+
+	if( !runtime_detoured )
+		callback.Detour( );
+
+	compiletime_detoured = true;
+}
+
+inline void ResetCompiletime( )
+{
+	if( !compiletime_detoured )
+		return;
+
+	if( !runtime_detoured )
+		callback.Reset( );
+
+	compiletime_detoured = false;
+}
+
 inline void DetourRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
+	if( runtime_detoured )
+		return;
+
+	if( !compiletime_detoured )
+		callback.Detour( );
+
 	LUA->PushNumber( 1 );
 	LUA->PushCFunction( AdvancedLuaErrorReporter_detour );
 	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
+	runtime_detoured = true;
 }
 
 inline void ResetRuntime( GarrysMod::Lua::ILuaBase *LUA )
 {
+	if( !runtime_detoured )
+		return;
+
+	if( !compiletime_detoured )
+		callback.Reset( );
+
 	LUA->PushNumber( 1 );
 	LUA->PushCFunction( AdvancedLuaErrorReporter );
 	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
+	runtime_detoured = false;
 }
 
 LUA_FUNCTION_STATIC( EnableRuntimeDetour )
@@ -479,9 +517,9 @@ LUA_FUNCTION_STATIC( EnableCompiletimeDetour )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
 
 	if( LUA->GetBool( 1 ) )
-		callback.Detour( );
+		DetourCompiletime( );
 	else
-		callback.Reset( );
+		ResetCompiletime( );
 
 	LUA->PushBool( true );
 	return 1;
@@ -548,7 +586,7 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	ResetRuntime( LUA );
-	callback.Reset( );
+	ResetCompiletime( );
 }
 
 }
