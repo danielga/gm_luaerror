@@ -8,6 +8,8 @@
 #include <GarrysMod/InterfacePointers.hpp>
 #include <lua.hpp>
 
+#include <detouring/hook.hpp>
+
 #include <string>
 #include <sstream>
 
@@ -23,6 +25,7 @@ static CFileSystem_Stdio *filesystem = nullptr;
 static bool runtime_detoured = false;
 static bool compiletime_detoured = false;
 static GarrysMod::Lua::CFunc AdvancedLuaErrorReporter = nullptr;
+static Detouring::Hook AdvancedLuaErrorReporter_detour;
 
 struct ErrorProperties
 {
@@ -211,11 +214,11 @@ inline const IAddonSystem::Information *FindWorkshopAddonFromFile( const std::st
 	return addons->FindFileOwner( source );
 }
 
-LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter_detour )
+static int32_t AdvancedLuaErrorReporter_d( lua_State *state )
 {
-	const char *errstr = LUA->GetString( 1 );
+	auto LUA = static_cast<GarrysMod::Lua::ILuaInterface *>( state->luabase );
 
-	auto lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
+	const char *errstr = LUA->GetString( 1 );
 
 	runtime = true;
 
@@ -224,10 +227,10 @@ LUA_FUNCTION_STATIC( AdvancedLuaErrorReporter_detour )
 	else
 		runtime_error.clear( );
 
-	PushStackTable( lua );
+	PushStackTable( LUA );
 	runtime_stack.Create( );
 
-	return AdvancedLuaErrorReporter( LUA->GetState( ) );
+	return AdvancedLuaErrorReporter_detour.GetTrampoline<GarrysMod::Lua::CFunc>( )( state );
 }
 
 class CLuaGameCallback : public GarrysMod::Lua::ILuaGameCallback
@@ -365,7 +368,7 @@ inline void ResetCompiletime( )
 	compiletime_detoured = false;
 }
 
-inline void DetourRuntime( GarrysMod::Lua::ILuaBase *LUA )
+inline void DetourRuntime( )
 {
 	if( runtime_detoured )
 		return;
@@ -373,13 +376,11 @@ inline void DetourRuntime( GarrysMod::Lua::ILuaBase *LUA )
 	if( !compiletime_detoured )
 		callback.Detour( );
 
-	LUA->PushNumber( 1 );
-	LUA->PushCFunction( AdvancedLuaErrorReporter_detour );
-	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
+	AdvancedLuaErrorReporter_detour.Enable( );
 	runtime_detoured = true;
 }
 
-inline void ResetRuntime( GarrysMod::Lua::ILuaBase *LUA )
+inline void ResetRuntime( )
 {
 	if( !runtime_detoured )
 		return;
@@ -387,9 +388,7 @@ inline void ResetRuntime( GarrysMod::Lua::ILuaBase *LUA )
 	if( !compiletime_detoured )
 		callback.Reset( );
 
-	LUA->PushNumber( 1 );
-	LUA->PushCFunction( AdvancedLuaErrorReporter );
-	LUA->SetTable( GarrysMod::Lua::INDEX_REGISTRY );
+	AdvancedLuaErrorReporter_detour.Disable( );
 	runtime_detoured = false;
 }
 
@@ -398,9 +397,9 @@ LUA_FUNCTION_STATIC( EnableRuntimeDetour )
 	LUA->CheckType( 1, GarrysMod::Lua::Type::BOOL );
 
 	if( LUA->GetBool( 1 ) )
-		DetourRuntime( LUA );
+		DetourRuntime( );
 	else
-		ResetRuntime( LUA );
+		ResetRuntime( );
 
 	LUA->PushBool( true );
 	return 1;
@@ -448,6 +447,11 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	LUA->Pop( 1 );
 
+	if( !AdvancedLuaErrorReporter_detour.Create(
+		AdvancedLuaErrorReporter, reinterpret_cast<void *>( &AdvancedLuaErrorReporter_d )
+	) )
+		LUA->ThrowError( "unable to create a hook for AdvancedLuaErrorReporter" );
+
 	filesystem = static_cast<CFileSystem_Stdio *>( InterfacePointers::FileSystem( ) );
 	if( filesystem == nullptr )
 		LUA->ThrowError( "unable to initialize IFileSystem" );
@@ -462,10 +466,11 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	LUA->SetField( -2, "FindWorkshopAddonFileOwner" );
 }
 
-void Deinitialize( GarrysMod::Lua::ILuaBase *LUA )
+void Deinitialize( GarrysMod::Lua::ILuaBase * )
 {
-	ResetRuntime( LUA );
+	ResetRuntime( );
 	ResetCompiletime( );
+	AdvancedLuaErrorReporter_detour.Destroy( );
 }
 
 }
