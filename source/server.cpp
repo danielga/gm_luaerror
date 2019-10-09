@@ -4,9 +4,9 @@
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <lua.hpp>
 #include <stdint.h>
-#include <GarrysMod/Interfaces.hpp>
-#include <symbolfinder.hpp>
-#include <hook.hpp>
+#include <GarrysMod/FactoryLoader.hpp>
+#include <scanning/symbolfinder.hpp>
+#include <detouring/hook.hpp>
 #include <sstream>
 #include <algorithm>
 #include <functional>
@@ -14,6 +14,8 @@
 #include <eiface.h>
 #include <../game/server/player.h>
 #include <regex>
+
+#undef isspace
 
 IVEngineServer *engine = nullptr;
 
@@ -39,13 +41,8 @@ static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_s
 
 #endif
 
-static const std::string main_binary = Helpers::GetBinaryFileName(
-	"server",
-	false,
-	true,
-	"garrysmod/bin/"
-);
-static SourceSDK::FactoryLoader engine_loader( "engine", false );
+static SourceSDK::ModuleLoader server_loader( "server" );
+static SourceSDK::FactoryLoader engine_loader( "engine" );
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
 static std::regex client_error_addon_matcher( "^\\[(.+)\\] ", std::regex_constants::optimize );
@@ -162,8 +159,10 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	SymbolFinder symfinder;
 
-	void *HandleClientLuaError = symfinder.ResolveOnBinary(
-		main_binary.c_str( ), HandleClientLuaError_sym, HandleClientLuaError_symlen
+	void *HandleClientLuaError = symfinder.Resolve(
+		server_loader.GetModule( ),
+		HandleClientLuaError_sym,
+		HandleClientLuaError_symlen
 	);
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );

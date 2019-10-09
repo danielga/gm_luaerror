@@ -1,11 +1,11 @@
 #include <shared.hpp>
 #include <GarrysMod/Lua/Interface.h>
-#include <GarrysMod/Interfaces.hpp>
+#include <GarrysMod/FactoryLoader.hpp>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoReference.h>
 #include <filesystem_stdio.h>
-#include <symbolfinder.hpp>
+#include <scanning/symbolfinder.hpp>
 #include <lua.hpp>
 #include <string>
 #include <sstream>
@@ -17,11 +17,10 @@ static bool runtime = false;
 static std::string runtime_error;
 static GarrysMod::Lua::AutoReference runtime_stack;
 
-static SourceSDK::FactoryLoader filesystem_loader( "filesystem_stdio", false, false );
+static SourceSDK::FactoryLoader filesystem_loader( "filesystem_stdio" );
 static CFileSystem_Stdio *filesystem = nullptr;
 
-static const std::string lua_shared_binary =
-	Helpers::GetBinaryFileName( "lua_shared", false, IS_SERVERSIDE, "garrysmod/bin/" );
+static SourceSDK::ModuleLoader lua_shared_loader( "lua_shared" );
 
 static bool runtime_detoured = false;
 static bool compiletime_detoured = false;
@@ -49,8 +48,7 @@ static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorRe
 
 #if defined LUAERROR_SERVER
 
-static const std::string dedicated_binary =
-	Helpers::GetBinaryFileName( "dedicated", false, true, "bin/" );
+static SourceSDK::ModuleLoader dedicated_loader( "dedicated" );
 
 #if defined _WIN32
 
@@ -547,16 +545,20 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	SymbolFinder symfinder;
 
 	AdvancedLuaErrorReporter =
-		reinterpret_cast<AdvancedLuaErrorReporter_t>( symfinder.ResolveOnBinary(
-		lua_shared_binary.c_str( ), AdvancedLuaErrorReporter_sym, AdvancedLuaErrorReporter_symlen
+		reinterpret_cast<AdvancedLuaErrorReporter_t>( symfinder.Resolve(
+			lua_shared_loader.GetModule( ),
+			AdvancedLuaErrorReporter_sym,
+			AdvancedLuaErrorReporter_symlen
 	) );
 	if( AdvancedLuaErrorReporter == nullptr )
 		LUA->ThrowError( "unable to obtain AdvancedLuaErrorReporter" );
 
 #if defined LUAERROR_SERVER
 
-	CreateInterfaceFn factory = reinterpret_cast<CreateInterfaceFn>( symfinder.ResolveOnBinary(
-		dedicated_binary.c_str( ), FileSystemFactory_sym, FileSystemFactory_symlen
+	CreateInterfaceFn factory = reinterpret_cast<CreateInterfaceFn>( symfinder.Resolve(
+		dedicated_loader.GetModule( ),
+		FileSystemFactory_sym,
+		FileSystemFactory_symlen
 	) );
 	if( factory != nullptr )
 		filesystem = static_cast<CFileSystem_Stdio *>(
