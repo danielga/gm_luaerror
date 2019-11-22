@@ -1,5 +1,6 @@
 # gm\_luaerror
 
+[![Build Status](https://metamann.visualstudio.com/GitHub%20danielga/_apis/build/status/danielga.gm_luaerror?branchName=master)](https://metamann.visualstudio.com/GitHub%20danielga/_build/latest?definitionId=9&branchName=master)  
 A module for Garry's Mod that adds hooks for obtaining errors that happen on the client and server (if activated on server, it also pushes errors from clients).
 
 ## API reference
