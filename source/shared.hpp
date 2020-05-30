@@ -1,7 +1,7 @@
 #pragma once
 
-#include <stdint.h>
-#include <sstream>
+#include <cstdint>
+#include <iosfwd>
 
 namespace GarrysMod
 {
@@ -15,9 +15,7 @@ namespace GarrysMod
 namespace shared
 {
 
-int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook );
 int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error );
-bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args, int32_t funcs );
 
 void Initialize( GarrysMod::Lua::ILuaBase *LUA );
 void Deinitialize( GarrysMod::Lua::ILuaBase *LUA );

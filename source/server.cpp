@@ -1,19 +1,23 @@
-#include <server.hpp>
-#include <shared.hpp>
+#include "server.hpp"
+#include "shared.hpp"
+
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
-#include <lua.hpp>
-#include <stdint.h>
-#include <GarrysMod/FactoryLoader.hpp>
-#include <scanning/symbolfinder.hpp>
+#include <GarrysMod/Lua/Helpers.hpp>
+#include <GarrysMod/InterfacePointers.hpp>
+#include <GarrysMod/FunctionPointers.hpp>
+
 #include <detouring/hook.hpp>
+
+#include <cstdint>
 #include <sstream>
 #include <algorithm>
 #include <functional>
 #include <cctype>
-#include <eiface.h>
-#include <../game/server/player.h>
 #include <regex>
+
+#include <eiface.h>
+#include <player.h>
 
 #undef isspace
 
@@ -22,27 +26,6 @@ IVEngineServer *engine = nullptr;
 namespace server
 {
 
-#if defined _WIN32
-
-static const char HandleClientLuaError_sym[] =
-	"\x55\x8B\xEC\x83\xEC\x08\x8B\x0D\x2A\x2A\x2A\x2A\x57\x8B\x7D\x08";
-static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
-
-#elif ( defined __linux && IS_SERVERSIDE ) || defined __APPLE__
-
-static const char HandleClientLuaError_sym[] = "@_Z20HandleClientLuaErrorP11CBasePlayerPKc";
-static const size_t HandleClientLuaError_symlen = 0;
-
-#elif ( defined __linux && !IS_SERVERSIDE )
-
-static const char HandleClientLuaError_sym[] =
-	"\x55\x89\xE5\x57\x56\x53\x83\xEC\x4C\x65\xA1\x2A\x2A\x2A\x2A\x89\x45\xE4";
-static const size_t HandleClientLuaError_symlen = sizeof( HandleClientLuaError_sym ) - 1;
-
-#endif
-
-static SourceSDK::ModuleLoader server_loader( "server" );
-static SourceSDK::FactoryLoader engine_loader( "engine" );
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
 static std::regex client_error_addon_matcher( "^\\[(.+)\\] ", std::regex_constants::optimize );
@@ -64,11 +47,9 @@ inline std::string Trim( const std::string &s )
 
 static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 {
-	int32_t funcs = shared::PushHookRun( lua, "ClientLuaError" );
+	const int32_t funcs = LuaHelpers::PushHookRun( lua, "ClientLuaError" );
 	if( funcs == 0 )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
-
-	lua->PushString( "ClientLuaError" );
 
 	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "Entity" );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
@@ -92,7 +73,7 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	lua->PushString( cleanerror.c_str( ) );
 
 	std::istringstream errstream( cleanerror );
-	int32_t errorPropsCount = shared::PushErrorProperties( lua, errstream );
+	const int32_t errorPropsCount = shared::PushErrorProperties( lua, errstream );
 
 	lua->CreateTable( );
 	while( errstream )
@@ -136,7 +117,12 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	else
 		lua->PushString( addon.c_str( ) );
 
-	if( shared::RunHook( lua, "ClientLuaError", 5 + errorPropsCount, funcs ) )
+	if( !LuaHelpers::CallHookRun( lua, 4 + errorPropsCount, 1 ) )
+		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
+
+	const bool proceed = !lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) || !lua->GetBool( -1 );
+	lua->Pop( 1 );
+	if( proceed )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 }
 
@@ -153,22 +139,17 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 {
 	lua = static_cast<GarrysMod::Lua::ILuaInterface *>( LUA );
 
-	engine = engine_loader.GetInterface<IVEngineServer>( INTERFACEVERSION_VENGINESERVER );
+	engine = InterfacePointers::VEngineServer( );
 	if( engine == nullptr )
 		LUA->ThrowError( "failed to retrieve server engine interface" );
 
-	SymbolFinder symfinder;
-
-	void *HandleClientLuaError = symfinder.Resolve(
-		server_loader.GetModule( ),
-		HandleClientLuaError_sym,
-		HandleClientLuaError_symlen
-	);
+	const auto HandleClientLuaError = FunctionPointers::HandleClientLuaError( );
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
 	if( !HandleClientLuaError_detour.Create(
-		HandleClientLuaError, reinterpret_cast<void *>( &HandleClientLuaError_d )
+		Detouring::Hook::Target( reinterpret_cast<void *>( HandleClientLuaError ) ),
+		reinterpret_cast<void *>( &HandleClientLuaError_d )
 	) )
 		LUA->ThrowError( "unable to create a hook for HandleClientLuaError" );
 
