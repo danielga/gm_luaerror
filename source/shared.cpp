@@ -1,14 +1,17 @@
-#include <shared.hpp>
+#include "shared.hpp"
+
 #include <GarrysMod/Lua/Interface.h>
-#include <GarrysMod/FactoryLoader.hpp>
+#include <GarrysMod/Lua/Helpers.hpp>
 #include <GarrysMod/Lua/LuaInterface.h>
 #include <GarrysMod/Lua/LuaGameCallback.h>
 #include <GarrysMod/Lua/AutoReference.h>
-#include <filesystem_stdio.h>
-#include <scanning/symbolfinder.hpp>
+#include <GarrysMod/InterfacePointers.hpp>
 #include <lua.hpp>
+
 #include <string>
 #include <sstream>
+
+#include <filesystem_stdio.h>
 
 namespace shared
 {
@@ -16,92 +19,10 @@ namespace shared
 static bool runtime = false;
 static std::string runtime_error;
 static GarrysMod::Lua::AutoReference runtime_stack;
-
-static SourceSDK::FactoryLoader filesystem_loader( "filesystem_stdio" );
 static CFileSystem_Stdio *filesystem = nullptr;
-
-static SourceSDK::ModuleLoader lua_shared_loader( "lua_shared" );
-
 static bool runtime_detoured = false;
 static bool compiletime_detoured = false;
-typedef int32_t ( *AdvancedLuaErrorReporter_t )( lua_State *state );
-static AdvancedLuaErrorReporter_t AdvancedLuaErrorReporter = nullptr;
-
-#if defined _WIN32
-
-static const char AdvancedLuaErrorReporter_sym[] =
-	"\x55\x8B\xEC\x8B\x0D\x2A\x2A\x2A\x2A\x56\x57\x8B\xB9\x0C\x10\x00";
-static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorReporter_sym ) - 1;
-
-#elif ( defined __linux && IS_SERVERSIDE ) || defined __APPLE__
-
-static const char AdvancedLuaErrorReporter_sym[] = "@_Z24AdvancedLuaErrorReporterP9lua_State";
-static const size_t AdvancedLuaErrorReporter_symlen = 0;
-
-#elif ( defined __linux && !IS_SERVERSIDE )
-
-static const char AdvancedLuaErrorReporter_sym[] =
-	"\x55\x89\xE5\x57\x56\x53\x83\xEC\x2c\x8B\x15\x2A\x2A\x2A\x2A\x8B";
-static const size_t AdvancedLuaErrorReporter_symlen = sizeof( AdvancedLuaErrorReporter_sym ) - 1;
-
-#endif
-
-#if defined LUAERROR_SERVER
-
-static SourceSDK::ModuleLoader dedicated_loader( "dedicated" );
-
-#if defined _WIN32
-
-static const char FileSystemFactory_sym[] = "\x55\x8B\xEC\x68\x2A\x2A\x2A\x2A\xFF\x75\x08\xE8";
-static const size_t FileSystemFactory_symlen = sizeof( FileSystemFactory_sym ) - 1;
-
-#elif defined __linux || defined __APPLE__
-
-static const char FileSystemFactory_sym[] = "@_Z17FileSystemFactoryPKcPi";
-static const size_t FileSystemFactory_symlen = 0;
-
-#endif
-
-#endif
-
-int32_t PushHookRun( GarrysMod::Lua::ILuaInterface *lua, const char *hook )
-{
-	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "debug" );
-	if( !lua->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
-	{
-		lua->ErrorNoHalt( "[%s] Global debug is not a table!\n", hook );
-		lua->Pop( 1 );
-		return 0;
-	}
-
-	lua->GetField( -1, "traceback" );
-	lua->Remove( -2 );
-	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
-	{
-		lua->ErrorNoHalt( "[%s] Global debug.traceback is not a function!\n", hook );
-		lua->Pop( 1 );
-		return 0;
-	}
-
-	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "hook" );
-	if( !lua->IsType( -1, GarrysMod::Lua::Type::TABLE ) )
-	{
-		lua->ErrorNoHalt( "[%s] Global hook is not a table!\n", hook );
-		lua->Pop( 2 );
-		return 0;
-	}
-
-	lua->GetField( -1, "Run" );
-	lua->Remove( -2 );
-	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
-	{
-		lua->ErrorNoHalt( "[%s] Global hook.Run is not a function!\n", hook );
-		lua->Pop( 2 );
-		return 0;
-	}
-
-	return 2;
-}
+static GarrysMod::Lua::CFunc AdvancedLuaErrorReporter = nullptr;
 
 struct ErrorProperties
 {
@@ -110,7 +31,7 @@ struct ErrorProperties
 	std::string error_string;
 };
 
-int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error, ErrorProperties &props )
+static int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error, ErrorProperties &props )
 {
 	std::string source_file;
 	std::getline( error, source_file, ':' );
@@ -278,18 +199,6 @@ static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 	return 1;
 }
 
-bool RunHook( GarrysMod::Lua::ILuaInterface *lua, const char *hook, int32_t args, int32_t funcs )
-{
-	bool call_original = true;
-	if( lua->PCall( args, 1, -funcs - args ) != 0 )
-		lua->ErrorNoHalt( "\n[%s] %s\n\n", hook, lua->GetString( -1 ) );
-	else if( lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) )
-		call_original = !lua->GetBool( -1 );
-
-	lua->Pop( funcs ); // hook.Run is popped and its result pushed
-	return call_original;
-}
-
 inline const IAddonSystem::Information *FindWorkshopAddonFromFile( const std::string &source )
 {
 	if( source.empty( ) || source == "[C]" )
@@ -361,13 +270,12 @@ public:
 
 	void LuaError( const CLuaError *error )
 	{
-		int32_t funcs = PushHookRun( lua, "LuaError" );
+		const int32_t funcs = LuaHelpers::PushHookRun( lua, "LuaError" );
 		if( funcs == 0 )
 			return callback->LuaError( error );
 
 		const std::string &errstr = runtime ? runtime_error : error->message;
 
-		lua->PushString( "LuaError" );
 		lua->PushBool( runtime );
 		lua->PushString( errstr.c_str( ) );
 
@@ -398,7 +306,12 @@ public:
 			lua->PushString( std::to_string( source_addon->wsid ).c_str( ) );
 		}
 
-		if( RunHook( lua, "LuaError", 5 + args, funcs ) )
+		if( !LuaHelpers::CallHookRun( lua, 4 + args, 1 ) )
+			return callback->LuaError( error );
+
+		const bool proceed = !lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) || !lua->GetBool( -1 );
+		lua->Pop( 1 );
+		if( proceed )
 			return callback->LuaError( error );
 	}
 
@@ -409,40 +322,23 @@ public:
 
 	void SetLua( GarrysMod::Lua::ILuaInterface *iface )
 	{
-		lua = iface;
-		callback = *reinterpret_cast<GarrysMod::Lua::ILuaGameCallback **>(
-			reinterpret_cast<uintptr_t>( lua ) + CLuaGameCallback_offset
-		);
+		lua = static_cast<GarrysMod::Lua::CLuaInterface *>( iface );
+		callback = lua->GetLuaGameCallback( );
 	}
 
 	void Detour( )
 	{
-		*reinterpret_cast<GarrysMod::Lua::ILuaGameCallback **>(
-			reinterpret_cast<uintptr_t>( lua ) + CLuaGameCallback_offset
-		) = this;
+		lua->SetLuaGameCallback( this );
 	}
 
 	void Reset( )
 	{
-		*reinterpret_cast<GarrysMod::Lua::ILuaGameCallback **>(
-			reinterpret_cast<uintptr_t>( lua ) + CLuaGameCallback_offset
-		) = callback;
+		lua->SetLuaGameCallback( callback );
 	}
 
 private:
-	GarrysMod::Lua::ILuaInterface *lua;
+	GarrysMod::Lua::CLuaInterface *lua;
 	GarrysMod::Lua::ILuaGameCallback *callback;
-
-#if defined _WIN32 || defined __linux
-
-	static const uintptr_t CLuaGameCallback_offset = 188;
-
-#elif defined __APPLE__
-
-	static const uintptr_t CLuaGameCallback_offset = 192;
-
-#endif
-
 };
 
 static CLuaGameCallback callback;
@@ -542,36 +438,17 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 
 	callback.SetLua( static_cast<GarrysMod::Lua::ILuaInterface *>( LUA ) );
 
-	SymbolFinder symfinder;
+	LUA->ReferencePush( 1 );
+	if( !LUA->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
+		LUA->ThrowError( "reference to AdvancedLuaErrorReporter is invalid" );
 
-	AdvancedLuaErrorReporter =
-		reinterpret_cast<AdvancedLuaErrorReporter_t>( symfinder.Resolve(
-			lua_shared_loader.GetModule( ),
-			AdvancedLuaErrorReporter_sym,
-			AdvancedLuaErrorReporter_symlen
-	) );
+	AdvancedLuaErrorReporter = LUA->GetCFunction( -1 );
 	if( AdvancedLuaErrorReporter == nullptr )
 		LUA->ThrowError( "unable to obtain AdvancedLuaErrorReporter" );
 
-#if defined LUAERROR_SERVER
+	LUA->Pop( 1 );
 
-	CreateInterfaceFn factory = reinterpret_cast<CreateInterfaceFn>( symfinder.Resolve(
-		dedicated_loader.GetModule( ),
-		FileSystemFactory_sym,
-		FileSystemFactory_symlen
-	) );
-	if( factory != nullptr )
-		filesystem = static_cast<CFileSystem_Stdio *>(
-			factory( FILESYSTEM_INTERFACE_VERSION, nullptr )
-		);
-
-#endif
-
-	if( filesystem == nullptr )
-		filesystem = filesystem_loader.GetInterface<CFileSystem_Stdio>(
-			FILESYSTEM_INTERFACE_VERSION
-		);
-
+	filesystem = static_cast<CFileSystem_Stdio *>( InterfacePointers::FileSystem( ) );
 	if( filesystem == nullptr )
 		LUA->ThrowError( "unable to initialize IFileSystem" );
 

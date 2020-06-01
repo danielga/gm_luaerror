@@ -1,9 +1,10 @@
+#include "shared.hpp"
+
 #include <GarrysMod/Lua/Interface.h>
-#include <shared.hpp>
 
 #if defined LUAERROR_SERVER
 
-#include <server.hpp>
+#include "server.hpp"
 
 #endif
 
@@ -11,11 +12,11 @@ GMOD_MODULE_OPEN( )
 {
 	LUA->CreateTable( );
 
-	LUA->PushString( "luaerror 1.5.2" );
+	LUA->PushString( "luaerror 1.5.3" );
 	LUA->SetField( -2, "Version" );
 
 	// version num follows LuaJIT style, xxyyzz
-	LUA->PushNumber( 10502 );
+	LUA->PushNumber( 10503 );
 	LUA->SetField( -2, "VersionNum" );
 
 #if defined LUAERROR_SERVER
