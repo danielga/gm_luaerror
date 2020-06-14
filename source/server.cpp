@@ -143,7 +143,7 @@ void Initialize( GarrysMod::Lua::ILuaBase *LUA )
 	if( engine == nullptr )
 		LUA->ThrowError( "failed to retrieve server engine interface" );
 
-	const auto HandleClientLuaError = FunctionPointers::HandleClientLuaError( );
+	const auto HandleClientLuaError = FunctionPointers::CBasePlayer_HandleClientLuaError( );
 	if( HandleClientLuaError == nullptr )
 		LUA->ThrowError( "unable to sigscan function HandleClientLuaError" );
 
