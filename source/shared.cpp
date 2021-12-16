@@ -270,6 +270,9 @@ public:
 
 	void LuaError( const CLuaError *error )
 	{
+		if( entered_hook )
+			return callback->LuaError( error );
+
 		const int32_t funcs = LuaHelpers::PushHookRun( lua, "LuaError" );
 		if( funcs == 0 )
 			return callback->LuaError( error );
@@ -306,7 +309,10 @@ public:
 			lua->PushString( std::to_string( source_addon->wsid ).c_str( ) );
 		}
 
-		if( !LuaHelpers::CallHookRun( lua, 4 + args, 1 ) )
+		entered_hook = true;
+		const bool call_success = LuaHelpers::CallHookRun( lua, 4 + args, 1 );
+		entered_hook = false;
+		if( !call_success )
 			return callback->LuaError( error );
 
 		const bool proceed = !lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) || !lua->GetBool( -1 );
@@ -339,6 +345,7 @@ public:
 private:
 	GarrysMod::Lua::CLuaInterface *lua;
 	GarrysMod::Lua::ILuaGameCallback *callback;
+	bool entered_hook = false;
 };
 
 static CLuaGameCallback callback;
