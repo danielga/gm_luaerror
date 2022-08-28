@@ -1,4 +1,5 @@
 #include "shared.hpp"
+#include "common/common.hpp"
 
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/Helpers.hpp>
@@ -8,8 +9,10 @@
 #include <GarrysMod/InterfacePointers.hpp>
 #include <lua.hpp>
 
+#include <cstdlib>
 #include <string>
 #include <sstream>
+#include <regex>
 
 #include <filesystem_stdio.h>
 
@@ -23,50 +26,6 @@ static CFileSystem_Stdio *filesystem = nullptr;
 static bool runtime_detoured = false;
 static bool compiletime_detoured = false;
 static GarrysMod::Lua::CFunc AdvancedLuaErrorReporter = nullptr;
-
-struct ErrorProperties
-{
-	std::string source_file;
-	int32_t source_line = -1;
-	std::string error_string;
-};
-
-static int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error, ErrorProperties &props )
-{
-	std::string source_file;
-	std::getline( error, source_file, ':' );
-
-	int32_t source_line = -1;
-	error >> source_line;
-
-	error.ignore( 2 ); // ignore ": "
-
-	std::string error_string;
-	std::getline( error, error_string );
-
-	if( !error ) // our stream is still valid
-	{
-		lua->PushNil( );
-		lua->PushNil( );
-		lua->PushNil( );
-		return 3;
-	}
-
-	props.source_file = source_file;
-	props.source_line = source_line;
-	props.error_string = error_string;
-
-	lua->PushString( props.source_file.c_str( ) );
-	lua->PushNumber( props.source_line );
-	lua->PushString( props.error_string.c_str( ) );
-	return 3;
-}
-
-int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error )
-{
-	ErrorProperties props;
-	return PushErrorProperties( lua, error, props );
-}
 
 inline bool GetUpvalues( GarrysMod::Lua::ILuaInterface *lua, int32_t funcidx )
 {
@@ -137,7 +96,7 @@ inline bool GetLocals( GarrysMod::Lua::ILuaInterface *lua, lua_Debug &dbg )
 	return true;
 }
 
-static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
+static void PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 {
 	lua->CreateTable( );
 
@@ -195,8 +154,6 @@ static int32_t PushStackTable( GarrysMod::Lua::ILuaInterface *lua )
 		// Pop activelines and func
 		lua->Pop( 2 );
 	}
-
-	return 1;
 }
 
 inline const IAddonSystem::Information *FindWorkshopAddonFromFile( const std::string &source )
@@ -270,34 +227,34 @@ public:
 
 	void LuaError( const CLuaError *error )
 	{
-		if( entered_hook )
+		const std::string &error_str = runtime ? runtime_error : error->message;
+
+		common::ParsedError parsed_error;
+		if( entered_hook || !common::ParseError( error_str, parsed_error ) )
 			return callback->LuaError( error );
 
 		const int32_t funcs = LuaHelpers::PushHookRun( lua, "LuaError" );
 		if( funcs == 0 )
 			return callback->LuaError( error );
 
-		const std::string &errstr = runtime ? runtime_error : error->message;
-
 		lua->PushBool( runtime );
-		lua->PushString( errstr.c_str( ) );
+		lua->PushString( error_str.c_str( ) );
 
-		std::istringstream errstream( errstr );
-		ErrorProperties props;
-		int32_t args = PushErrorProperties( lua, errstream, props );
+		lua->PushString( parsed_error.source_file.c_str( ) );
+		lua->PushNumber( parsed_error.source_line );
+		lua->PushString( parsed_error.error_string.c_str( ) );
 
 		if( runtime )
 		{
-			args += 1;
 			runtime_stack.Push( );
 			runtime_stack.Free( );
 		}
 		else
-			args += PushStackTable( lua );
+			PushStackTable( lua );
 
 		runtime = false;
 
-		const auto source_addon = FindWorkshopAddonFromFile( props.source_file );
+		const auto source_addon = FindWorkshopAddonFromFile( parsed_error.source_file );
 		if( source_addon == nullptr )
 		{
 			lua->PushNil( );
@@ -310,7 +267,7 @@ public:
 		}
 
 		entered_hook = true;
-		const bool call_success = LuaHelpers::CallHookRun( lua, 4 + args, 1 );
+		const bool call_success = LuaHelpers::CallHookRun( lua, 8, 1 );
 		entered_hook = false;
 		if( !call_success )
 			return callback->LuaError( error );

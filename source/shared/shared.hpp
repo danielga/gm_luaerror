@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cstdint>
-#include <iosfwd>
-
 namespace GarrysMod
 {
 	namespace Lua
@@ -14,8 +11,6 @@ namespace GarrysMod
 
 namespace shared
 {
-
-int32_t PushErrorProperties( GarrysMod::Lua::ILuaInterface *lua, std::istringstream &error );
 
 void Initialize( GarrysMod::Lua::ILuaBase *LUA );
 void Deinitialize( GarrysMod::Lua::ILuaBase *LUA );

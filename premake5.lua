@@ -20,11 +20,13 @@ CreateWorkspace({name = "luaerror", abi_compatible = true})
 		IncludeDetouring()
 
 		files({
-			"source/main.cpp",
-			"source/server.cpp",
-			"source/server.hpp",
-			"source/shared.cpp",
-			"source/shared.hpp"
+			"source/shared/main.cpp",
+			"source/server/server.cpp",
+			"source/server/server.hpp",
+			"source/shared/shared.cpp",
+			"source/shared/shared.hpp",
+			"source/common/common.cpp",
+			"source/common/common.hpp"
 		})
 
 	CreateProject({serverside = false, manual_files = true})
@@ -36,7 +38,22 @@ CreateWorkspace({name = "luaerror", abi_compatible = true})
 		IncludeScanning()
 
 		files({
-			"source/main.cpp",
-			"source/shared.cpp",
-			"source/shared.hpp"
+			"source/shared/main.cpp",
+			"source/shared/shared.cpp",
+			"source/shared/shared.hpp",
+			"source/common/common.cpp",
+			"source/common/common.hpp"
+		})
+
+	project("testing")
+		kind("ConsoleApp")
+		includedirs("source/common")
+		files({
+			"source/common/common.hpp",
+			"source/common/common.cpp",
+			"source/testing/main.cpp"
+		})
+		vpaths({
+			["Header files/*"] = "source/**.hpp",
+			["Source files/*"] = "source/**.cpp"
 		})

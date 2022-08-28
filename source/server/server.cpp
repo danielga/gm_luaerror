@@ -1,5 +1,5 @@
 #include "server.hpp"
-#include "shared.hpp"
+#include "common/common.hpp"
 
 #include <GarrysMod/Lua/Interface.h>
 #include <GarrysMod/Lua/LuaInterface.h>
@@ -28,25 +28,16 @@ namespace server
 
 static GarrysMod::Lua::ILuaInterface *lua = nullptr;
 
-static std::regex client_error_addon_matcher( "^\\[(.+)\\] ", std::regex_constants::optimize );
-
 typedef void ( *HandleClientLuaError_t )( CBasePlayer *player, const char *error );
 
 static Detouring::Hook HandleClientLuaError_detour;
 
-inline std::string Trim( const std::string &s )
-{
-	std::string c = s;
-	auto not_isspace = std::not_fn( isspace );
-	// remote trailing "spaces"
-	c.erase( std::find_if( c.rbegin( ), c.rend( ), not_isspace ).base( ), c.end( ) );
-	// remote initial "spaces"
-	c.erase( c.begin( ), std::find_if( c.begin( ), c.end( ), not_isspace ) );
-	return c;
-}
-
 static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 {
+	common::ParsedErrorWithStackTrace parsed_error;
+	if( !common::ParseErrorWithStackTrace( error, parsed_error ) )
+		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
+
 	const int32_t funcs = LuaHelpers::PushHookRun( lua, "ClientLuaError" );
 	if( funcs == 0 )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
@@ -54,70 +45,43 @@ static void HandleClientLuaError_d( CBasePlayer *player, const char *error )
 	lua->GetField( GarrysMod::Lua::INDEX_GLOBAL, "Entity" );
 	if( !lua->IsType( -1, GarrysMod::Lua::Type::FUNCTION ) )
 	{
-		lua->Pop( funcs + 2 );
+		lua->Pop( funcs + 1 );
 		lua->ErrorNoHalt( "[ClientLuaError] Global Entity is not a function!\n" );
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 	}
 	lua->PushNumber( player->entindex( ) );
 	lua->Call( 1, 1 );
 
-	std::string cleanerror = Trim( error );
-	std::string addon;
-	std::smatch matches;
-	if( std::regex_search( cleanerror, matches, client_error_addon_matcher ) )
-	{
-		addon = matches[1];
-		cleanerror.erase( 0, 1 + addon.size( ) + 1 + 1 ); // [addon]:space:
-	}
+	lua->PushString( error );
 
-	lua->PushString( cleanerror.c_str( ) );
-
-	std::istringstream errstream( cleanerror );
-	const int32_t errorPropsCount = shared::PushErrorProperties( lua, errstream );
+	lua->PushString( parsed_error.source_file.c_str( ) );
+	lua->PushNumber( parsed_error.source_line );
+	lua->PushString( parsed_error.error_string.c_str( ) );
 
 	lua->CreateTable( );
-	while( errstream )
+	for( const auto &stack_frame : parsed_error.stack_trace )
 	{
-		int32_t level = 0;
-		errstream >> level;
-
-		errstream.ignore( 2 ); // ignore ". "
-
-		std::string name;
-		errstream >> name;
-
-		errstream.ignore( 3 ); // ignore " - "
-
-		std::string source;
-		std::getline( errstream, source, ':' );
-
-		int32_t currentline = -1;
-		errstream >> currentline;
-
-		if( !errstream ) // it shouldn't have reached eof by now
-			break;
-
-		lua->PushNumber( level );
+		lua->PushNumber( stack_frame.level );
 		lua->CreateTable( );
 
-		lua->PushString( name.c_str( ) );
+		lua->PushString( stack_frame.name.c_str( ) );
 		lua->SetField( -2, "name" );
 
-		lua->PushNumber( currentline );
+		lua->PushNumber( stack_frame.currentline );
 		lua->SetField( -2, "currentline" );
 
-		lua->PushString( source.c_str( ) );
+		lua->PushString( stack_frame.source.c_str( ) );
 		lua->SetField( -2, "source" );
 
 		lua->SetTable( -3 );
 	}
 
-	if( addon.empty( ) )
+	if( parsed_error.addon_name.empty( ) )
 		lua->PushNil( );
 	else
-		lua->PushString( addon.c_str( ) );
+		lua->PushString( parsed_error.addon_name.c_str( ) );
 
-	if( !LuaHelpers::CallHookRun( lua, 4 + errorPropsCount, 1 ) )
+	if( !LuaHelpers::CallHookRun( lua, 7, 1 ) )
 		return HandleClientLuaError_detour.GetTrampoline<HandleClientLuaError_t>( )( player, error );
 
 	const bool proceed = !lua->IsType( -1, GarrysMod::Lua::Type::BOOL ) || !lua->GetBool( -1 );
