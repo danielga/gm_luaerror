@@ -36,6 +36,7 @@ CreateWorkspace({name = "luaerror", abi_compatible = true})
 		IncludeSDKTier0()
 		IncludeSDKTier1()
 		IncludeScanning()
+		IncludeDetouring()
 
 		files({
 			"source/shared/main.cpp",
