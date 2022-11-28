@@ -138,15 +138,12 @@ jobs:
     - macosx
   condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/'))
   steps:
-  - task: DownloadBuildArtifacts@0
-    displayName: 'Download build artifacts'
-    inputs:
-      downloadType: specific
-      parallelizationLimit: 12
+  - download: current
+    patterns: '**/*.dll'
   - task: GitHubRelease@1
     displayName: 'Publish GitHub release $(build.sourceBranchName)'
     inputs:
       gitHubConnection: 'GitHub danielga'
       releaseNotesSource: inline
-      assets: '$(System.ArtifactsDirectory)/**'
+      assets: '$(Pipeline.Workspace)/**/*.dll'
       addChangeLog: false
